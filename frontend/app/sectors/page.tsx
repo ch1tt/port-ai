@@ -263,7 +263,7 @@ export default function SectorsPage() {
         <div className="glass-panel rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-white/5 to-transparent border border-white/5">
           <div>
             <h3 className="text-lg font-medium text-white mb-2">Want a deeper sector analysis?</h3>
-            <p className="text-sm text-white/50">Use Sentinel AI to generate a full institutional-grade report on any sector or stock.</p>
+            <p className="text-sm text-white/50">Use PortAI to generate a full institutional-grade report on any sector or stock.</p>
           </div>
           <Link href="/intelligence" className="flex-shrink-0 flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-black text-sm font-medium hover:bg-gray-200 transition-colors">
             <iconify-icon icon="solar:magic-stick-3-linear"></iconify-icon> Open AI Intelligence Hub

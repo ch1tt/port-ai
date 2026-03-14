@@ -402,7 +402,7 @@ export default function Dashboard() {
           <div className="glass-panel rounded-2xl p-6 relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/10 blur-3xl rounded-full"></div>
             <h2 className="text-2xl font-medium tracking-tight text-white mb-1 relative z-10">AI Portfolio Analyst</h2>
-            <p className="text-white/60 text-sm mb-5 relative z-10 max-w-xl">Ask anything about your investments. Sentinel AI uses real-time market data to provide clear, actionable advice tailored to your needs.</p>
+            <p className="text-white/60 text-sm mb-5 relative z-10 max-w-xl">Ask anything about your investments. PortAI uses real-time market data to provide clear, actionable advice tailored to your needs.</p>
 
             <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows={4}
               placeholder="e.g. Is it a good time to buy Tata Motors for long term holding?"
@@ -597,7 +597,7 @@ export default function Dashboard() {
                 <div className="col-span-2">
                     <div className="flex items-center gap-2 mb-4">
                         <iconify-icon icon="solar:shield-check-bold" className="text-white"></iconify-icon>
-                        <span className="text-sm font-semibold tracking-tight text-white">Sentinel Finance AI</span>
+                        <span className="text-sm font-semibold tracking-tight text-white">PortAI</span>
                     </div>
                     <p className="text-xs text-white/40 max-w-xs leading-relaxed">
                         Clear, AI-driven financial insights to help Indian investors make smarter decisions.
@@ -632,7 +632,7 @@ export default function Dashboard() {
             </div>
             
             <div className="flex items-center justify-between pt-8 border-t border-white/10">
-                <p className="text-[10px] text-white/30">© 2026 Sentinel Finance AI. All rights reserved.</p>
+                <p className="text-[10px] text-white/30">© 2026 PortAI. All rights reserved.</p>
                 <div className="flex gap-4 text-white/40">
                     <iconify-icon icon="solar:brand-twitter-linear" className="hover:text-white cursor-pointer"></iconify-icon>
                     <iconify-icon icon="solar:brand-linkedin-linear" className="hover:text-white cursor-pointer"></iconify-icon>

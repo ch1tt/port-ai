@@ -192,7 +192,7 @@ export default function PortfoliosPage() {
             PORTFOLIO CENTER
           </div>
           <h1 className="text-3xl font-medium tracking-tight text-white mb-2">Your Portfolio Hub</h1>
-          <p className="text-white/50 text-sm max-w-lg">Connect your broker, upload statements, or analyze one of our sample portfolios to see Sentinel AI in action.</p>
+          <p className="text-white/50 text-sm max-w-lg">Connect your broker, upload statements, or analyze one of our sample portfolios to see PortAI in action.</p>
         </div>
 
         {error && (
@@ -292,7 +292,7 @@ export default function PortfoliosPage() {
               <iconify-icon icon="solar:shield-check-bold" width="28"></iconify-icon>
             </div>
             <h3 className="text-2xl font-medium tracking-tight text-white mb-2 relative z-10">Broker Sync API</h3>
-            <p className="text-sm text-white/40 mb-8 relative z-10">Securely connect your Upstox account. Sentinel AI instantly reads your live holdings to find sector risks and alpha opportunities.</p>
+            <p className="text-sm text-white/40 mb-8 relative z-10">Securely connect your Upstox account. PortAI instantly reads your live holdings to find sector risks and alpha opportunities.</p>
 
             <div className="relative z-10">
               {brokerToken ? (
@@ -361,7 +361,7 @@ export default function PortfoliosPage() {
                   <>
                     <iconify-icon icon="solar:upload-linear" width="32" className="text-white/40 group-hover:text-blue-400 transition-colors"></iconify-icon>
                     <div className="text-sm font-medium">Click to upload file</div>
-                    <div className="text-[10px] text-white/30 text-center px-4">CSV, PDF, TXT, or image — Sentinel AI parses everything</div>
+                    <div className="text-[10px] text-white/30 text-center px-4">CSV, PDF, TXT, or image — PortAI parses everything</div>
                   </>
                 )}
               </button>

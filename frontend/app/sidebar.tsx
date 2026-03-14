@@ -90,7 +90,7 @@ export default function Sidebar() {
             <div className="flex text-black bg-white w-7 h-7 rounded-lg items-center justify-center shadow-[0_0_15px_rgba(255,255,255,0.3)]">
               <iconify-icon icon="solar:shield-check-bold" width="16"></iconify-icon>
             </div>
-            <span className="text-sm font-semibold text-white tracking-tight">Sentinel AI</span>
+            <span className="text-sm font-semibold text-white tracking-tight">PortAI</span>
           </div>
         </div>
 

@@ -13,7 +13,7 @@ load_dotenv(dotenv_path=_ENV_PATH)
 
 from app.services.broker_service import generate_upstox_login_url, exchange_upstox_code, fetch_upstox_holdings
 
-app = FastAPI(title="Sentinel Finance AI – Intelligence API")
+app = FastAPI(title="PortAI – Intelligence API")
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True,
@@ -54,21 +54,21 @@ SAMPLE_MARKET = {
 SAMPLE_NEWS = [
     {
         "title": "Nifty, Sensex edge higher on banking and IT gains",
-        "source": "Sentinel Simulated Feed",
+        "source": "PortAI News Feed",
         "url": "#",
         "publishedAt": "2026-03-13T10:00:00Z",
         "description": "Benchmark indices trade in the green amid positive global cues and stable crude prices.",
     },
     {
         "title": "RBI maintains policy rate, signals data‑dependent stance",
-        "source": "Sentinel Simulated Feed",
+        "source": "PortAI News Feed",
         "url": "#",
         "publishedAt": "2026-03-13T09:30:00Z",
         "description": "Central bank commentary focuses on liquidity normalization and inflation expectations.",
     },
     {
         "title": "FII flows turn positive after three sessions of selling",
-        "source": "Sentinel Simulated Feed",
+        "source": "PortAI News Feed",
         "url": "#",
         "publishedAt": "2026-03-13T09:00:00Z",
         "description": "Foreign investors add exposure to large‑cap financials and autos.",
@@ -308,7 +308,7 @@ async def analyze_with_groq(query: str, news_ctx: str, market_ctx: str, extra_ct
 
     model_name = "llama-3.3-70b-versatile"
 
-    system_prompt = """You are Sentinel Finance AI, an elite institutional-grade financial analyst. You provide hedge-fund-quality intelligence to Indian retail investors.
+    system_prompt = """You are PortAI, an elite institutional-grade financial analyst. You provide hedge-fund-quality intelligence to Indian retail investors.
 
 You MUST respond ONLY with valid JSON (no markdown fences, no extra text). Use this exact structure:
 {
@@ -429,7 +429,7 @@ def extract_symbol(query: str) -> Optional[str]:
 # ── Endpoints ─────────────────────────────────────────────────
 @app.get("/")
 async def root():
-    return {"service": "Sentinel Finance AI", "status": "operational"}
+    return {"service": "PortAI", "status": "operational"}
 
 
 @app.get("/api/config")
