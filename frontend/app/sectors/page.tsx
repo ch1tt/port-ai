@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import StockChart from '../../components/StockChart';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
@@ -35,6 +36,7 @@ export default function SectorsPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState('');
+  const [marketHistory, setMarketHistory] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     fetchSectors();
@@ -45,8 +47,19 @@ export default function SectorsPage() {
     try {
       const r = await fetch(`${API_BASE}/api/sectors`);
       const d = await r.json();
-      setSectors(d.sectors || []);
+      const sectorData = d.sectors || [];
+      setSectors(sectorData);
       setLastUpdated(new Date().toLocaleTimeString('en-IN'));
+      
+      // Fetch history for top 6 sectors
+      const indices: Record<string, string> = {
+        'IT': '^CNXIT', 'Banking': '^NSEBANK', 'Pharma': '^CNXPHARMA',
+        'FMCG': '^CNXFMCG', 'Auto': '^CNXAUTO', 'Energy': '^CNXENERGY',
+        'Infra': '^CNXINFRA', 'Telecom': '^CNXTELECOM',
+      };
+      sectorData.forEach((s: any) => {
+        if (indices[s.name]) fetchHistory(s.name, indices[s.name]);
+      });
     } catch (e) {
       // Fallback mock data if backend not available
       setSectors([
@@ -63,6 +76,16 @@ export default function SectorsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchHistory = async (name: string, symbol: string) => {
+    try {
+      const r = await fetch(`${API_BASE}/api/history/${encodeURIComponent(symbol)}?period=1mo`);
+      const d = await r.json();
+      if (d.history) {
+        setMarketHistory(prev => ({ ...prev, [name]: d.history }));
+      }
+    } catch (err) {}
   };
 
   const gainers = [...sectors].filter(s => s.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct);
@@ -152,6 +175,23 @@ export default function SectorsPage() {
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isGain ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                         {isGain ? '+' : ''}{sector.change_pct}%
                       </span>
+                    </div>
+
+                    {/* Sector Performance Chart */}
+                    <div className="h-10 w-full mb-4 opacity-70 group-hover:opacity-100 transition-opacity">
+                       {marketHistory[sector.name] ? (
+                          <StockChart 
+                            data={marketHistory[sector.name]} 
+                            color={isGain ? '#10b981' : '#f43f5e'} 
+                            height={40} 
+                          />
+                       ) : (
+                         <div className="h-full w-full flex items-end gap-1 px-1 opacity-20">
+                            {[...Array(15)].map((_, i) => (
+                              <div key={i} className="flex-1 bg-white/20 rounded-t-sm" style={{ height: `${20 + Math.random() * 80}%` }}></div>
+                            ))}
+                         </div>
+                       )}
                     </div>
 
                     <div className="mb-3">

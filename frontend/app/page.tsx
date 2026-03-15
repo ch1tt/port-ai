@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import createGlobe from 'cobe';
+import StockChart from '../components/StockChart';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
@@ -88,6 +89,7 @@ export default function Dashboard() {
   const [marketTime, setMarketTime] = useState('');
   const [brokerToken, setBrokerToken] = useState<string | null>(null);
   const [brokerHoldings, setBrokerHoldings] = useState<any[]>([]);
+  const [marketHistory, setMarketHistory] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     fetchMarket();
@@ -122,13 +124,22 @@ export default function Dashboard() {
       sessionStorage.removeItem('intelligence_prefill');
     }
 
-    // Auto-refresh every 30 seconds
+    fetchMarket();
+    fetchNews();
+    fetchTrendingStocks();
+    fetchHistory('NIFTY 50');
+    fetchHistory('SENSEX');
+    
+    // Auto-refresh market every 30 seconds, news every 2 minutes
     const interval = setInterval(() => {
       fetchMarket();
-      fetchNews();
       fetchTrendingStocks();
     }, 30000);
-    return () => clearInterval(interval);
+    const newsInterval = setInterval(fetchNews, 120000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(newsInterval);
+    };
   }, []);
 
   const fetchBrokerHoldings = async (token: string) => {
@@ -155,6 +166,16 @@ export default function Dashboard() {
   };
   const fetchTrendingStocks = async () => {
     try { const r = await fetch(`${API_BASE}/api/trending-stocks`); const d = await r.json(); setTrendingStocks(d.stocks || []); } catch (err) { console.error('Failed to fetch trending stocks:', err); }
+  };
+
+  const fetchHistory = async (symbol: string) => {
+    try {
+      const r = await fetch(`${API_BASE}/api/history/${encodeURIComponent(symbol)}?period=1mo`);
+      const d = await r.json();
+      if (d.history) {
+        setMarketHistory(prev => ({ ...prev, [symbol]: d.history }));
+      }
+    } catch (err) { console.error(`Failed to fetch history for ${symbol}:`, err); }
   };
 
   const runAnalysis = async () => {
@@ -271,14 +292,35 @@ export default function Dashboard() {
                       </span>
                   </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {Object.entries(market).length > 0 ? Object.entries(market).map(([name, data]) => (
-                      <div key={name} className="glass-panel rounded-xl p-4 hover:bg-white/[0.04] transition-all group">
-                          <div className="text-[10px] text-white/40 uppercase tracking-wider mb-2 font-medium">{name}</div>
-                          <div className="text-xl font-medium text-white mb-1">₹{data.price?.toLocaleString('en-IN')}</div>
-                          <div className={`text-sm font-medium flex items-center gap-1 ${data.change_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              <iconify-icon icon={data.change_pct >= 0 ? "solar:arrow-up-linear" : "solar:arrow-down-linear"} width="14"></iconify-icon>
-                              {data.change >= 0 ? '+' : ''}{data.change?.toFixed(2)} ({data.change_pct >= 0 ? '+' : ''}{data.change_pct}%)
+                      <div key={name} className="glass-panel rounded-xl p-5 hover:bg-white/[0.04] transition-all group border border-white/5 hover:border-white/10 outline outline-1 outline-transparent hover:outline-white/10">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                                <div className="text-[10px] text-white/40 uppercase tracking-widest mb-1 font-medium">{name}</div>
+                                <div className="text-xl font-medium text-white tracking-tight">₹{data.price?.toLocaleString('en-IN')}</div>
+                            </div>
+                            <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${data.change_pct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                              {data.change_pct >= 0 ? '+' : ''}{data.change_pct?.toFixed(2)}%
+                            </div>
+                          </div>
+                          
+                          {/* Miniature Chart */}
+                          <div className="h-10 w-full mt-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                            {marketHistory[name] ? (
+                              <StockChart 
+                                data={marketHistory[name]} 
+                                color={data.change_pct >= 0 ? '#10b981' : '#f43f5e'} 
+                                height={40} 
+                                label={name}
+                              />
+                            ) : (
+                              <div className="h-full w-full flex items-end gap-1 px-1 opacity-20">
+                                {[...Array(15)].map((_, i) => (
+                                  <div key={i} className="flex-1 bg-white/20 rounded-t-sm" style={{ height: `${20 + Math.random() * 80}%` }}></div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                       </div>
                   )) : (

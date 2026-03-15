@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import StockChart from '../../components/StockChart';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
@@ -89,6 +90,7 @@ export default function PortfoliosPage() {
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'broker' | 'upload' | 'samples'>('samples');
+  const [marketHistory, setMarketHistory] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     const token = localStorage.getItem('upstox_access_token');
@@ -97,6 +99,10 @@ export default function PortfoliosPage() {
       fetchBrokerHoldings(token);
       setActiveTab('broker');
     }
+    // Fetch history for sample symbols
+    SAMPLE_PORTFOLIOS.forEach(p => {
+      p.holdings.forEach(h => fetchHistory(h.symbol));
+    });
   }, []);
 
   const fetchBrokerHoldings = async (token: string) => {
@@ -106,8 +112,22 @@ export default function PortfoliosPage() {
         body: JSON.stringify({ access_token: token, broker: 'upstox' })
       });
       const data = await res.json();
-      if (data.holdings) setBrokerHoldings(data.holdings);
+      if (data.holdings) {
+        setBrokerHoldings(data.holdings);
+        data.holdings.forEach((h: any) => fetchHistory(h.symbol));
+      }
     } catch (e) { console.error('Failed to fetch broker holdings', e); }
+  };
+
+  const fetchHistory = async (symbol: string) => {
+    if (marketHistory[symbol]) return;
+    try {
+      const r = await fetch(`${API_BASE}/api/history/${encodeURIComponent(symbol)}?period=1mo`);
+      const d = await r.json();
+      if (d.history) {
+        setMarketHistory(prev => ({ ...prev, [symbol]: d.history }));
+      }
+    } catch (err) {}
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,16 +273,28 @@ export default function PortfoliosPage() {
                     {/* Holdings List */}
                     <div className="space-y-2 mb-5 relative z-10">
                       {portfolio.holdings.map(h => (
-                        <div key={h.symbol} className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
-                          <div>
-                            <span className="text-xs font-semibold text-white">{h.symbol}</span>
-                            <span className="text-[9px] text-white/30 ml-2">{h.qty} shares</span>
+                        <div key={h.symbol} className="flex flex-col py-3 border-b border-white/[0.04] last:border-0">
+                          <div className="flex items-center justify-between mb-2">
+                             <div>
+                                <span className="text-xs font-semibold text-white">{h.symbol}</span>
+                                <span className="text-[9px] text-white/30 ml-2">{h.qty} shares</span>
+                             </div>
+                             <div className="text-right">
+                                <div className="text-xs text-white">₹{h.current_price.toLocaleString('en-IN')}</div>
+                                <div className={`text-[9px] font-medium ${h.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                   {h.pnl >= 0 ? '+' : ''}₹{Math.abs(h.pnl).toLocaleString('en-IN')} ({h.pnl_pct}%)
+                                </div>
+                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-xs text-white">₹{h.current_price.toLocaleString('en-IN')}</div>
-                            <div className={`text-[9px] font-medium ${h.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {h.pnl >= 0 ? '+' : ''}₹{Math.abs(h.pnl).toLocaleString('en-IN')} ({h.pnl_pct}%)
-                            </div>
+                          {/* Mini Chart for Portfolio Holding */}
+                          <div className="h-6 w-full opacity-40 group-hover:opacity-80 transition-opacity">
+                             {marketHistory[h.symbol] && (
+                                <StockChart 
+                                   data={marketHistory[h.symbol]} 
+                                   color={h.pnl >= 0 ? '#10b981' : '#f43f5e'} 
+                                   height={24} 
+                                />
+                             )}
                           </div>
                         </div>
                       ))}

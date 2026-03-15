@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import StockChart from '../../components/StockChart';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
@@ -51,6 +52,8 @@ export default function IntelligencePage() {
   const [trendingStocks, setTrendingStocks] = useState<TrendingStock[]>([]);
   const [history, setHistory] = useState<{ query: string; analysis: Analysis }[]>([]);
   const [activeTab, setActiveTab] = useState<'analyst' | 'news' | 'trending'>('analyst');
+  const [marketHistory, setMarketHistory] = useState<Record<string, any[]>>({});
+  const [analysisSymbol, setAnalysisSymbol] = useState<string | null>(null);
 
   useEffect(() => {
     fetchNews();
@@ -86,16 +89,37 @@ export default function IntelligencePage() {
     try {
       const r = await fetch(`${API_BASE}/api/trending`);
       const d = await r.json();
-      setTrendingStocks(Array.isArray(d) ? d : d.stocks || []);
+      const stocks = Array.isArray(d) ? d : d.stocks || [];
+      setTrendingStocks(stocks);
+      // Fetch history for top 6 trending stocks
+      stocks.slice(0, 6).forEach((s: any) => fetchHistory(s.symbol));
     } catch (e) {}
+  };
+
+  const fetchHistory = async (symbol: string) => {
+    try {
+      const r = await fetch(`${API_BASE}/api/history/${encodeURIComponent(symbol)}?period=1mo`);
+      const d = await r.json();
+      if (d.history) {
+        setMarketHistory(prev => ({ ...prev, [symbol]: d.history }));
+      }
+    } catch (err) {}
   };
 
   const runAnalysis = async (q?: string) => {
     const finalQuery = q || query;
     if (!finalQuery.trim()) return;
     if (q) setQuery(q);
-    setLoading(true); setError(''); setAnalysis(null); setApisUsed([]);
+    setLoading(true); setError(''); setAnalysis(null); setApisUsed([]); setAnalysisSymbol(null);
     try {
+      // Try to extract symbol from query (e.g. "Analyze TCS" -> "TCS")
+      const symbolMatch = finalQuery.match(/\b[A-Z]{2,10}\b/);
+      const symbol = symbolMatch ? symbolMatch[0] : null;
+      if (symbol) {
+        setAnalysisSymbol(symbol);
+        fetchHistory(symbol);
+      }
+
       const res = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: finalQuery, context: '' }),
@@ -236,6 +260,19 @@ export default function IntelligencePage() {
                           <div className="text-xs font-semibold text-white">{analysis.portfolio_score}/100</div>
                         </div>
                       )}
+                      
+                      {analysisSymbol && marketHistory[analysisSymbol] && (
+                        <div className="mb-6 p-4 rounded-xl bg-black/40 border border-white/5">
+                           <div className="flex items-center justify-between mb-3">
+                              <span className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Technical Chart: {analysisSymbol}</span>
+                              <span className="text-[10px] text-blue-400 font-medium">1 Month Trend</span>
+                           </div>
+                           <div className="h-32 w-full">
+                              <StockChart data={marketHistory[analysisSymbol]} height={128} color="#3b82f6" />
+                           </div>
+                        </div>
+                      )}
+
                       <p className="text-sm text-white/80 leading-relaxed">{analysis.summary}</p>
                     </div>
 
@@ -347,21 +384,41 @@ export default function IntelligencePage() {
                     ↻ Refresh
                   </button>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {trendingStocks.length > 0 ? trendingStocks.map((stock) => (
                     <button key={stock.symbol} onClick={() => { setActiveTab('analyst'); runAnalysis(`Analyze ${stock.symbol} stock. Should I buy it today?`); }}
-                      className="glass-panel rounded-xl p-4 text-left hover:bg-white/[0.04] transition-all cursor-pointer group border border-transparent hover:border-white/10">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-white tracking-tight">{stock.symbol}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${stock.change_pct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                          {stock.change_pct >= 0 ? '▲' : '▼'} {Math.abs(stock.change_pct)}%
+                      className="glass-panel rounded-xl p-5 text-left hover:bg-white/[0.04] transition-all cursor-pointer group border border-white/5 hover:border-blue-500/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-xs font-semibold text-white tracking-tight">{stock.symbol}</span>
+                          <div className="text-lg font-medium text-white">₹{stock.price?.toLocaleString('en-IN')}</div>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-lg font-bold ${stock.change_pct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                          {stock.change_pct >= 0 ? '+' : ''}{stock.change_pct}%
                         </span>
                       </div>
-                      <div className="text-base font-medium text-white">₹{stock.price?.toLocaleString('en-IN')}</div>
-                      <div className={`text-[10px] mt-1 ${stock.change >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
-                        {stock.change >= 0 ? '+' : ''}{stock.change?.toFixed(2)}
+
+                      {/* Miniature Chart in Intelligence Hub */}
+                      <div className="h-10 w-full mb-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                         {marketHistory[stock.symbol] ? (
+                            <StockChart 
+                              data={marketHistory[stock.symbol]} 
+                              color={stock.change_pct >= 0 ? '#10b981' : '#f43f5e'} 
+                              height={40} 
+                            />
+                         ) : (
+                           <div className="h-full w-full flex items-end gap-1 px-1">
+                              {[...Array(12)].map((_, i) => (
+                                <div key={i} className="flex-1 bg-white/5 rounded-t-sm" style={{ height: `${20 + Math.random() * 80}%` }}></div>
+                              ))}
+                           </div>
+                         )}
                       </div>
-                      <div className="text-[9px] text-white/30 mt-2 group-hover:text-blue-400 transition-colors">Click to analyze →</div>
+
+                      <div className="text-[10px] text-white/30 group-hover:text-blue-400 transition-colors flex items-center gap-1">
+                        <iconify-icon icon="solar:magic-stick-3-linear"></iconify-icon>
+                        Analyze with AI →
+                      </div>
                     </button>
                   )) : Array.from({length: 6}).map((_, i) => (
                     <div key={i} className="glass-panel rounded-xl p-4 animate-pulse">

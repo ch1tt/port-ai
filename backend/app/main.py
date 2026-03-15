@@ -685,6 +685,37 @@ async def analyze_file(file: UploadFile = File(...), query: str = Form(default="
             "market": {}, "news_used": [], "apis_used": []
         }
 
+@app.get("/api/history/{symbol}")
+async def get_history(symbol: str, period: str = "1mo"):
+    try:
+        # Handle index symbols like NIFTY 50 -> ^NSEI
+        ticker_sym = symbol
+        if symbol.upper() == "NIFTY 50": ticker_sym = "^NSEI"
+        elif symbol.upper() == "SENSEX": ticker_sym = "^BSESN"
+        elif symbol.upper() == "NIFTY BANK": ticker_sym = "^NSEBANK"
+        elif not ticker_sym.startswith("^") and not ticker_sym.endswith(".NS") and not ticker_sym.endswith(".BO"):
+            ticker_sym = f"{ticker_sym.upper()}.NS"
+
+        ticker = yf.Ticker(ticker_sym)
+        hist = await asyncio.to_thread(lambda: ticker.history(period=period))
+        if hist.empty:
+            return {"error": "No data found", "symbol": symbol}
+        
+        data = []
+        for date, row in hist.iterrows():
+            data.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "close": round(row["Close"], 2),
+                "high": round(row["High"], 2),
+                "low": round(row["Low"], 2),
+                "open": round(row["Open"], 2),
+                "volume": int(row["Volume"])
+            })
+        return {"symbol": symbol, "history": data}
+    except Exception as e:
+        print(f"History fetch error for {symbol}: {e}")
+        return {"error": str(e), "symbol": symbol}
+
 @app.get("/api/stock/{symbol}")
 async def get_stock(symbol: str):
     data = await fetch_yahoo_stock_detail(symbol)
