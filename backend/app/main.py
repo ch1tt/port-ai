@@ -680,6 +680,10 @@ async def analyze_file(file: UploadFile = File(...), query: str = Form(default="
         else:
             text_content = content.decode("utf-8", errors="ignore")[:5000]
 
+        # Upload file to Supabase Storage for persistence
+        from app.services.db_service import save_ai_report, upload_file_to_supabase
+        file_url = upload_file_to_supabase(content, file.filename)
+
         text_content = text_content[:15000]
         market = await fetch_indian_market()
         news = await fetch_indian_news()
@@ -691,14 +695,15 @@ async def analyze_file(file: UploadFile = File(...), query: str = Form(default="
         
         if "data_sources" not in analysis: analysis["data_sources"] = []
         analysis["data_sources"] = list(set(analysis.get("data_sources", []) + extra_sources + ["Groq LLM"]))
+        if file_url: analysis["data_sources"].append(f"Persistence: {file_url}")
         
-        from app.services.db_service import save_ai_report
         report_to_save = analysis.copy()
         report_to_save["query"] = query
+        report_to_save["file_url"] = file_url
         save_ai_report(report_to_save)
         
         return {"analysis": analysis, "market": market, "news_used": [a.get("title") for a in news[:4] if isinstance(a, dict)],
-                "file_name": file.filename, "apis_used": extra_sources + ["Yahoo Finance", "NewsAPI", "Groq AI"]}
+                "file_name": file.filename, "file_url": file_url, "apis_used": extra_sources + ["Yahoo Finance", "NewsAPI", "Groq AI"]}
     except Exception as e:
         print(f"Top-level analyze file error: {e}")
         return {
