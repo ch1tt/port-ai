@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 *.pyo
 venv/
+venv*/
 .venv/
 env/
 *.egg-info/

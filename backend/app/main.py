@@ -20,15 +20,34 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ── Config ─────────────────────────────────────────────────────
+# ── Global API Clients ──────────────────────────────────────────
 GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
 NEWS_API_KEY      = os.getenv("NEWS_API_KEY", "")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")
 FINNHUB_KEY       = os.getenv("FINNHUB_KEY", "")
 FRED_KEY          = os.getenv("FRED_KEY", "")
 
-groq_client: Optional[Groq] = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+groq_client: Optional[Groq] = None
+def init_groq():
+    global groq_client
+    if GROQ_API_KEY:
+        try:
+            groq_client = Groq(api_key=GROQ_API_KEY)
+        except Exception as e:
+            print(f"Failed to init Groq: {e}")
+            groq_client = None
 
+def init_gemini():
+    if GEMINI_API_KEY:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+        except Exception as e:
+            print(f"Failed to init Gemini: {e}")
+
+init_groq()
+init_gemini()
 
 def config_status() -> Dict[str, Any]:
     return {
@@ -45,6 +64,14 @@ def config_status() -> Dict[str, Any]:
 class AnalyzeRequest(BaseModel):
     query: str
     context: Optional[str] = None
+
+class ConfigUpdateRequest(BaseModel):
+    groq_api_key: Optional[str] = None
+    news_api_key: Optional[str] = None
+    alpha_vantage_key: Optional[str] = None
+    finnhub_key: Optional[str] = None
+    fred_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
 
 SAMPLE_MARKET = {
     "NIFTY 50": {"price": 22500.0, "change": 120.5, "change_pct": 0.54},
@@ -132,22 +159,30 @@ TRENDING_TICKERS = [
     ("LT", "LT.NS"),
 ]
 
+import asyncio
+
+async def fetch_ticker_data(label, sym):
+    try:
+        # Run synchronous yfinance calls in a thread pool to avoid blocking the event loop
+        t = yf.Ticker(sym)
+        # We use a lambda to ensure the call is executed in the thread
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = info.get("lastPrice", 0)
+        prev = info.get("previousClose", 1)
+        change = round(price - prev, 2)
+        change_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
+        return {
+            "symbol": label, "price": round(price, 2),
+            "change": change, "change_pct": change_pct,
+        }
+    except Exception:
+        return None
+
 async def fetch_trending_stocks():
-    results = []
-    for label, sym in TRENDING_TICKERS:
-        try:
-            t = yf.Ticker(sym)
-            info = t.fast_info
-            price = info.get("lastPrice", 0)
-            prev = info.get("previousClose", 1)
-            change = round(price - prev, 2)
-            change_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
-            results.append({
-                "symbol": label, "price": round(price, 2),
-                "change": change, "change_pct": change_pct,
-            })
-        except Exception:
-            continue
+    tasks = [fetch_ticker_data(label, sym) for label, sym in TRENDING_TICKERS]
+    results = await asyncio.gather(*tasks)
+    results = [r for r in results if r is not None]
+    
     if not results:
         # Fallback data
         for sym, data in FALLBACK_STOCKS.items():
@@ -157,21 +192,30 @@ async def fetch_trending_stocks():
             })
     return results
 
+async def fetch_index_data(name, sym):
+    try:
+        t = yf.Ticker(sym)
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = info.get("lastPrice", 0)
+        prev = info.get("previousClose", 1)
+        return name, {
+            "price": round(price, 2), "change": round(price - prev, 2),
+            "change_pct": round(((price - prev) / prev) * 100, 2) if prev else 0,
+        }
+    except Exception:
+        return None
+
 async def fetch_indian_market():
-    results: Dict[str, Dict[str, float]] = {}
-    for name, sym in INDIAN_INDICES.items():
-        try:
-            t = yf.Ticker(sym)
-            info = t.fast_info
-            price = info.get("lastPrice", 0)
-            prev = info.get("previousClose", 1)
-            results[name] = {
-                "price": round(price, 2), "change": round(price - prev, 2),
-                "change_pct": round(((price - prev) / prev) * 100, 2),
-            }
-        except Exception:
-            continue
-    return results or SAMPLE_MARKET
+    tasks = [fetch_index_data(name, sym) for name, sym in INDIAN_INDICES.items()]
+    results = await asyncio.gather(*tasks)
+    
+    indices = {}
+    for r in results:
+        if r:
+            name, data = r
+            indices[name] = data
+            
+    return indices or SAMPLE_MARKET
 
 # ── NewsAPI ────────────────────────────────────────────────────
 async def fetch_indian_news():
@@ -436,6 +480,33 @@ async def root():
 async def get_config():
     return config_status()
 
+@app.post("/api/config")
+async def update_config(req: ConfigUpdateRequest):
+    global GROQ_API_KEY, NEWS_API_KEY, ALPHA_VANTAGE_KEY, FINNHUB_KEY, FRED_KEY, GEMINI_API_KEY
+    updated = []
+    if req.groq_api_key is not None:
+        GROQ_API_KEY = req.groq_api_key
+        init_groq()
+        updated.append("Groq")
+    if req.news_api_key is not None:
+        NEWS_API_KEY = req.news_api_key
+        updated.append("NewsAPI")
+    if req.alpha_vantage_key is not None:
+        ALPHA_VANTAGE_KEY = req.alpha_vantage_key
+        updated.append("Alpha Vantage")
+    if req.finnhub_key is not None:
+        FINNHUB_KEY = req.finnhub_key
+        updated.append("Finnhub")
+    if req.fred_key is not None:
+        FRED_KEY = req.fred_key
+        updated.append("FRED")
+    if req.gemini_api_key is not None:
+        GEMINI_API_KEY = req.gemini_api_key
+        init_gemini()
+        updated.append("Gemini")
+    
+    return {"status": config_status(), "updated": updated}
+
 
 
 @app.get("/api/status")
@@ -477,34 +548,43 @@ SECTOR_INDICES = {
     "Infra": "^CNXINFRA", "Telecom": "^CNXTELECOM",
 }
 
-async def fetch_sector_data():
-    sectors = []
-    for name, index_ticker in SECTOR_INDICES.items():
-        try:
-            t = yf.Ticker(index_ticker)
-            info = t.fast_info
-            price = info.get("lastPrice", 0)
-            prev = info.get("previousClose", 1)
-            change_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
-            sector_entry = {"name": name, "price": round(price, 2), "change_pct": change_pct, "stocks": []}
-        except Exception:
-            sector_entry = {"name": name, "price": 0, "change_pct": 0, "stocks": []}
+async def fetch_single_sector(name, index_ticker):
+    try:
+        t = yf.Ticker(index_ticker)
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = info.get("lastPrice", 0)
+        prev = info.get("previousClose", 1)
+        change_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
+        sector_entry = {"name": name, "price": round(price, 2), "change_pct": change_pct, "stocks": []}
+    except Exception:
+        sector_entry = {"name": name, "price": 0, "change_pct": 0, "stocks": []}
 
-        for sym in SECTOR_TICKERS.get(name, [])[:3]:
+    # Fetch top 3 stocks for the sector in parallel
+    stock_tickers = SECTOR_TICKERS.get(name, [])[:3]
+    stock_tasks = []
+    for sym in stock_tickers:
+        async def fetch_stock(s_sym):
             try:
-                s = yf.Ticker(sym)
-                si = s.fast_info
+                s = yf.Ticker(s_sym)
+                si = await asyncio.to_thread(lambda: s.fast_info)
                 sp = si.get("lastPrice", 0)
                 sprev = si.get("previousClose", 1)
-                sector_entry["stocks"].append({
-                    "symbol": sym.replace(".NS", "").replace(".BO", ""),
+                return {
+                    "symbol": s_sym.replace(".NS", "").replace(".BO", ""),
                     "price": round(sp, 2),
                     "change_pct": round(((sp - sprev) / sprev) * 100, 2) if sprev else 0
-                })
+                }
             except Exception:
-                pass
-        sectors.append(sector_entry)
-    return sectors
+                return None
+        stock_tasks.append(fetch_stock(sym))
+    
+    stock_results = await asyncio.gather(*stock_tasks)
+    sector_entry["stocks"] = [s for s in stock_results if s is not None]
+    return sector_entry
+
+async def fetch_sector_data():
+    tasks = [fetch_single_sector(name, index_ticker) for name, index_ticker in SECTOR_INDICES.items()]
+    return await asyncio.gather(*tasks)
 
 @app.get("/api/sectors")
 async def get_sectors():

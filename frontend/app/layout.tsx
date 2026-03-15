@@ -18,9 +18,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v1.4.34/dist/unicornStudio.umd.js" async={true}></script>
       </head>
       <body className="antialiased selection:bg-white/20 selection:text-white pb-20 bg-black">
-        {/* Background Component */}
-        <div className="fixed top-0 w-full h-screen -z-10 hue-rotate-90 brightness-125 pointer-events-none" data-alpha-mask="80" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 0%, black 80%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 0%, black 80%, transparent)' }}>
+        {/* Background Component - Optimized by removing expensive filters */}
+        <div className="fixed top-0 w-full h-screen -z-10 pointer-events-none" 
+             style={{ 
+               maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)', 
+               WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+               opacity: 0.6 // Use opacity instead of filters for better performance
+             }}>
           <div data-us-project="bmaMERjX2VZDtPrh4Zwx" className="absolute w-full h-full left-0 top-0 -z-10 pointer-events-none"></div>
+          {/* Subtle color overlay instead of hue-rotate */}
+          <div className="absolute inset-0 bg-blue-500/5 mix-blend-overlay pointer-events-none"></div>
         </div>
 
         <Header />

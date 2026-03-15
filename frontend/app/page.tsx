@@ -24,7 +24,11 @@ function AnimatedGlobe() {
   useEffect(() => {
     let phi = 0;
     let width = 0;
-    const onResize = () => canvasRef.current && (width = canvasRef.current.offsetWidth)
+    const onResize = () => {
+      if (canvasRef.current) {
+        width = canvasRef.current.offsetWidth;
+      }
+    }
     window.addEventListener('resize', onResize)
     onResize()
 
@@ -38,7 +42,7 @@ function AnimatedGlobe() {
       theta: 0.3,
       dark: 1,
       diffuse: 1.2,
-      mapSamples: 16000,
+      mapSamples: 12000, // Reduced from 16000 for performance
       mapBrightness: 6,
       baseColor: [0.3, 0.3, 0.3], 
       markerColor: [0.4, 0.6, 1], 
@@ -54,14 +58,14 @@ function AnimatedGlobe() {
       onRender: (state) => {
         state.phi = phi
         phi += 0.003
-        state.width = width * 2
-        state.height = width * 2
+        // Handle resize within the render loop only if needed
+        if (canvasRef.current && canvasRef.current.offsetWidth !== state.width / 2) {
+          const newWidth = canvasRef.current.offsetWidth;
+          state.width = newWidth * 2;
+          state.height = newWidth * 2;
+        }
       },
     });
-
-    setTimeout(() => {
-      onResize();
-    }, 100);
 
     return () => {
       window.removeEventListener('resize', onResize);
@@ -105,10 +109,17 @@ export default function Dashboard() {
         setAnalysis(parsed.analysis);
         if (parsed.market) setMarket(parsed.market);
         if (parsed.apis_used) setApisUsed(parsed.apis_used);
-        sessionStorage.removeItem('cached_analysis'); // consume it
+        sessionStorage.removeItem('cached_analysis');
       } catch (e) {
         console.error("Failed to parse cached analysis", e);
       }
+    }
+
+    // Check for prefill from sectors page
+    const prefill = sessionStorage.getItem('intelligence_prefill');
+    if (prefill) {
+      setQuery(prefill);
+      sessionStorage.removeItem('intelligence_prefill');
     }
 
     // Auto-refresh every 30 seconds
@@ -411,13 +422,17 @@ export default function Dashboard() {
 
             <div className="flex flex-col sm:flex-row gap-3 mt-4 relative z-10">
               <button onClick={runAnalysis} disabled={loading || !query.trim()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-black text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-black text-sm font-medium hover:bg-gray-200 transition-all shadow-lg active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed">
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Analyzing Market Data...
+                    Processing Intelligence...
                   </span>
-                ) : (<><iconify-icon icon="solar:magic-stick-3-linear"></iconify-icon> Initiate Analysis</>)}
+                ) : (<><iconify-icon icon="solar:stars-minimalistic-bold" width="18"></iconify-icon> Start Analysis</>)}
+              </button>
+              <button onClick={() => setQuery('')}
+                className="px-6 py-3 rounded-xl border border-white/10 text-white/40 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
+                Clear
               </button>
             </div>
 
