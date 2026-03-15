@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 }
 
 import Header from '@/components/Header'
+import { AuthProvider } from '@/context/AuthContext'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -30,8 +31,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute inset-0 bg-blue-500/5 mix-blend-overlay pointer-events-none"></div>
         </div>
 
-        <Header />
-        {children}
+        <AuthProvider>
+          <Header />
+          {children}
+        </AuthProvider>
         
         {/* Init UnicornStudio wrapper script */}
         <script dangerouslySetInnerHTML={{ __html: `

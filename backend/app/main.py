@@ -69,12 +69,13 @@ class AnalyzeRequest(BaseModel):
     context: Optional[str] = None
 
 class ConfigUpdateRequest(BaseModel):
-    groq_api_key: Optional[str] = None
-    news_api_key: Optional[str] = None
-    alpha_vantage_key: Optional[str] = None
-    finnhub_key: Optional[str] = None
-    fred_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    twilio_sid: Optional[str] = None
+    twilio_token: Optional[str] = None
+    twilio_phone: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    user_phone: Optional[str] = None
 
 SAMPLE_MARKET = {
     "NIFTY 50": {"price": 22500.0, "change": 120.5, "change_pct": 0.54},
@@ -244,6 +245,32 @@ async def fetch_indian_news():
         print(f"NewsAPI error: {e}")
         return SAMPLE_NEWS
 
+async def fetch_policy_news():
+    """Fetches high-impact Indian government policy news."""
+    if not NEWS_API_KEY:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            # specifically search for policies, GST, Budget, PLI in Indian context
+            resp = await c.get("https://newsapi.org/v2/everything", params={
+                "q": "Indian Government Policy OR GST India OR PLI Scheme OR RBI Repo Rate OR Union Budget India",
+                "sortBy": "relevancy",
+                "pageSize": 10,
+                "apiKey": NEWS_API_KEY
+            })
+            if resp.status_code == 200:
+                data = resp.json()
+                return [
+                    {"title": a.get("title", ""), "source": a.get("source", {}).get("name", ""),
+                     "url": a.get("url", "#"), "publishedAt": a.get("publishedAt", ""),
+                     "description": a.get("description", "")}
+                    for a in data.get("articles", [])
+                    if a.get("title")
+                ]
+    except Exception as e:
+        print(f"Policy news error: {e}")
+    return []
+
 # ── Alpha Vantage ──────────────────────────────────────────────
 async def fetch_alpha_vantage(symbol: str):
     if not ALPHA_VANTAGE_KEY: return None
@@ -371,6 +398,8 @@ async def analyze_with_groq(query: str, news_ctx: str, market_ctx: str, extra_ct
 
 Your task is to provide UNIQUE, institutional-level insights. Avoid "basic" summaries. Move beyond what's on the surface to find hidden correlations, institutional rotation patterns, and "unknown" or counter-intuitive signals.
 
+CRITICAL REQUIREMENT: You MUST synthesize all market moves with current and upcoming Indian Government Policies (e.g., Union Budget allocations, PLI Schemes, GST revisions, RBI monetary policy shifts, SEBI regulatory changes, and infrastructure initiatives like Gati Shakti). Explain specifically HOW policy shifts are driving the price action or risk profile of the stocks in question.
+
 You MUST respond ONLY with valid JSON (no markdown fences, no extra text). Use this exact structure:
 {
   "summary": "3-4 sentence intensive executive briefing. Write like a chief strategist at a top-tier hedge fund. Use high-conviction, professional language.",
@@ -472,6 +501,13 @@ async def build_extra_context(query: str):
     if fred:
         parts.append("MACRO ECONOMIC DATA (FRED):\n" + "\n".join([f"  {k}: {v['value']} ({v['date']})" for k, v in fred.items()]))
         sources.append("FRED")
+    
+    # New: Add explicit Policy Context
+    policy_news = await fetch_policy_news()
+    if policy_news:
+        parts.append("INDIAN GOVT POLICY CONTEXT:\n" + "\n".join([f"  - {a['title']} (Source: {a['source']})" for a in policy_news[:6]]))
+        sources.append("Policy Intelligence")
+        
     return "\n\n".join(parts) if parts else "", sources
 
 def extract_symbol(query: str) -> Optional[str]:
@@ -493,6 +529,33 @@ def extract_symbol(query: str) -> Optional[str]:
         if kw in q_lower: return sym
     matches = re.findall(r'\b([A-Z]{2,15})\b', query)
     return matches[0] if matches else None
+
+# ── Background Surveillance ───────────────────────────────────
+WATCHED_STOCKS = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]
+
+async def background_market_surveillance():
+    """Periodically checks market health for watched stocks and sends alerts."""
+    from app.services.notification_service import notify_all_channels
+    while True:
+        try:
+            print("Running market surveillance check...")
+            market_data = await fetch_indian_market()
+            for stock, data in market_data.items():
+                # Critical Alert: Stock down more than 3% in a session
+                if stock in WATCHED_STOCKS and data.get("change_pct", 0) < -3.0:
+                    alert_msg = f"⚠️ CRITICAL RISK: {stock} is down {data['change_pct']:.2f}%! Price: ₹{data['price']}. Take action."
+                    await notify_all_channels(alert_msg)
+            
+            # General Health Check loop
+            await asyncio.sleep(300) # Check every 5 minutes
+        except Exception as e:
+            print(f"Surveillance Error: {e}")
+            await asyncio.sleep(60)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(background_market_surveillance())
+    print("Market Surveillance Engine started.")
 
 # ── Endpoints ─────────────────────────────────────────────────
 @app.get("/")
@@ -528,6 +591,17 @@ async def update_config(req: ConfigUpdateRequest):
         GEMINI_API_KEY = req.gemini_api_key
         init_gemini()
         updated.append("Gemini")
+    
+    # Update notification envs
+    if req.twilio_sid: os.environ["TWILIO_ACCOUNT_SID"] = req.twilio_sid
+    if req.twilio_token: os.environ["TWILIO_AUTH_TOKEN"] = req.twilio_token
+    if req.twilio_phone: os.environ["TWILIO_PHONE_NUMBER"] = req.twilio_phone
+    if req.telegram_bot_token: os.environ["TELEGRAM_BOT_TOKEN"] = req.telegram_bot_token
+    if req.telegram_chat_id: os.environ["TELEGRAM_CHAT_ID"] = req.telegram_chat_id
+    if req.user_phone: os.environ["USER_PHONE_NUMBER"] = req.user_phone
+    
+    if any([req.twilio_sid, req.telegram_bot_token]):
+        updated.append("Notifications")
     
     return {"status": config_status(), "updated": updated}
 
@@ -637,6 +711,12 @@ async def analyze(req: AnalyzeRequest):
         report_to_save["query"] = req.query
         save_ai_report(report_to_save)
         
+        # Trigger Notification for high-risk bearish sentiment
+        if analysis.get("sentiment") == "Bearish":
+            from app.services.notification_service import notify_all_channels
+            risk_summary = analysis.get("summary", "Critical portfolio risks detected.")
+            asyncio.create_task(notify_all_channels(f"RISK ALERT: {risk_summary}"))
+
         return {"analysis": analysis, "market": market, "news_used": [a.get("title") for a in news[:4] if isinstance(a, dict)],
                 "apis_used": extra_sources + ["Yahoo Finance", "NewsAPI", "Groq AI"]}
     except Exception as e:
@@ -753,6 +833,13 @@ async def get_stock(symbol: str):
         fb.setdefault("symbol", sym)
         return fb
     return {"error": "Fetch failed", "symbol": symbol}
+
+@app.post("/api/test-notification")
+async def test_notification(req: dict):
+    from app.services.notification_service import notify_all_channels
+    msg = req.get("message", "This is a test notification from PortAI! Institutional quality signals are ready.")
+    res = await notify_all_channels(msg)
+    return {"status": "dispatched", "results": res}
 
 # ── Broker Integrations ───────────────────────────────────────
 @app.get("/api/broker/login/upstox")

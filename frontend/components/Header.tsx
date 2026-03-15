@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -27,14 +29,14 @@ export default function Header() {
         )}
 
         {/* Logo Section */}
-        <div className="flex items-center gap-4 relative z-10 group cursor-pointer">
+        <Link href="/" className="flex items-center gap-4 relative z-10 group cursor-pointer">
           <div className="relative">
             <div className="relative flex text-black bg-white w-9 h-9 rounded-xl items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.4)] group-hover:shadow-[0_0_30px_rgba(255,255,255,0.6)] transition-all duration-500 overflow-hidden">
                <iconify-icon icon="solar:shield-check-bold" width="22"></iconify-icon>
             </div>
           </div>
           <span className="text-lg font-bold tracking-tighter shimmer-text">PortAI</span>
-        </div>
+        </Link>
         
         {/* Navigation Links */}
         <div className="hidden md:flex items-center gap-10 relative z-10">
@@ -58,12 +60,29 @@ export default function Header() {
             <span className="text-emerald-400/80 font-semibold">AI LIVE ANALYSIS</span>
           </div>
 
-          <Link href="/intelligence" 
-            className="group relative px-6 py-2.5 rounded-xl bg-white text-black text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] overflow-hidden">
-            {/* Shimmer effect inside button */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/[0.05] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-            <span className="relative z-10">Start Analysis</span>
-          </Link>
+          {user ? (
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => signOut()}
+                className="text-[11px] font-bold text-white/30 hover:text-red-400 transition-colors uppercase tracking-wider"
+              >
+                Sign Out
+              </button>
+              <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-400 overflow-hidden">
+                {user.user_metadata?.avatar_url ? (
+                  <img src={user.user_metadata.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <iconify-icon icon="solar:user-bold-duotone" width="20"></iconify-icon>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Link href="/auth" 
+              className="group relative px-6 py-2.5 rounded-xl bg-white text-black text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/[0.1] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+              <span className="relative z-10">Login</span>
+            </Link>
+          )}
         </div>
       </div>
     </nav>

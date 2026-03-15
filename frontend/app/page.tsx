@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import createGlobe from 'cobe';
 import StockChart from '../components/StockChart';
 import DetailModal from '../components/DetailModal';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
@@ -44,7 +46,7 @@ function AnimatedGlobe() {
       theta: 0.3,
       dark: 1,
       diffuse: 1.2,
-      mapSamples: 12000, // Reduced from 16000 for performance
+      mapSamples: 8000, // Optimized for performance
       mapBrightness: 6,
       baseColor: [0.3, 0.3, 0.3], 
       markerColor: [0.4, 0.6, 1], 
@@ -80,6 +82,7 @@ function AnimatedGlobe() {
 
 export default function Dashboard() {
   const [query, setQuery] = useState('');
+  const router = useRouter();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [market, setMarket] = useState<Record<string, MarketIndex>>({});
   const [news, setNews] = useState<NewsArticle[]>([]);
@@ -96,10 +99,6 @@ export default function Dashboard() {
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
   useEffect(() => {
-    fetchMarket();
-    fetchNews();
-    fetchTrendingStocks();
-    
     // Check for broker integration
     const token = localStorage.getItem('upstox_access_token');
     if (token) {
@@ -379,7 +378,11 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                   {trendingStocks.length > 0 ? trendingStocks.map((stock) => (
-                      <div key={stock.symbol} className="glass-panel rounded-xl p-4 hover:bg-white/[0.04] transition-all cursor-pointer group border border-transparent hover:border-white/10">
+                      <div 
+                        key={stock.symbol} 
+                        onClick={() => openStockModal(stock.symbol, stock)}
+                        className="glass-panel rounded-xl p-4 hover:bg-white/[0.04] transition-all cursor-pointer group border border-transparent hover:border-white/10"
+                      >
                           <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-semibold text-white tracking-tight">{stock.symbol}</span>
                               <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${stock.change_pct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -424,7 +427,7 @@ export default function Dashboard() {
               {/* Headline Tape - Horizontal Scroll */}
               <div className="overflow-x-auto scrollbar-hide pb-2">
                   <div className="flex gap-4" style={{ minWidth: 'max-content' }}>
-                      {news.length > 0 ? news.slice(0, 10).map((a, i) => (
+                      {news.length > 0 ? news.slice(0, 24).map((a, i) => (
                           <a key={i} href={a.url} target="_blank" rel="noreferrer" className="flex-shrink-0 w-[320px] glass-panel rounded-xl p-5 hover:bg-white/[0.04] transition-all group border border-transparent hover:border-white/10">
                               <div className="flex items-center gap-2 mb-3">
                                   <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">{a.source}</span>
@@ -657,19 +660,21 @@ export default function Dashboard() {
               </h3>
               <button onClick={fetchNews} className="text-[10px] w-6 h-6 flex items-center justify-center rounded-md bg-white/5 text-white/30 hover:text-white transition-colors group-hover:bg-white/10">↻</button>
             </div>
-            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1 scrollbar-hide">
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1 scrollbar-hide">
               {news.map((a, i) => (
-                <button 
+                <a 
                   key={i} 
-                  onClick={() => openNewsModal(a)} 
-                  className="w-full text-left block p-3 rounded-xl bg-black/40 border border-white/5 hover:bg-white/5 hover:border-white/20 transition-all cursor-pointer group"
+                  href={a.url} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="w-full text-left block p-3 rounded-xl bg-black/40 border border-white/5 hover:bg-white/5 hover:border-white/20 transition-all cursor-pointer group no-underline"
                 >
                   <div className="flex justify-between items-start">
                     <div className="text-[10px] text-emerald-400/80 mb-1 font-medium">{a.source}</div>
-                    <iconify-icon icon="solar:eye-linear" className="text-white/10 group-hover:text-blue-400 transition-colors"></iconify-icon>
+                    <iconify-icon icon="solar:link-linear" className="text-white/10 group-hover:text-blue-400 transition-colors"></iconify-icon>
                   </div>
                   <p className="text-xs text-white/80 leading-relaxed font-light">{a.title}</p>
-                </button>
+                </a>
               ))}
               {news.length === 0 && <p className="text-xs text-white/30 italic">Loading news feed...</p>}
             </div>
