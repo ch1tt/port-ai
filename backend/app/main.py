@@ -873,6 +873,424 @@ async def get_holdings(req: dict):
         return {"holdings": holdings}
     return {"error": "Invalid token or broker"}
 
+
+# ══════════════════════════════════════════════════════════════════
+# ═══  STRATTON OAKMONT — AI HEDGE FUND ENGINE ENDPOINTS  ═══════
+# ══════════════════════════════════════════════════════════════════
+
+from pydantic import Field as PydanticField
+
+class StrattonAnalyzeRequest(BaseModel):
+    tickers: list[str]
+    use_llm: bool = False
+    personas: Optional[list[str]] = None
+    model_provider: str = "groq"
+    model_name: str = "llama3-70b-8192"
+    show_reasoning: bool = True
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    cash: float = 100000
+
+class StrattonBacktestRequest(BaseModel):
+    tickers: list[str]
+    start_date: str = "2024-01-01"
+    end_date: Optional[str] = None
+    cash: float = 100000
+    stop_loss: Optional[float] = None
+    trailing_stop: Optional[float] = None
+    take_profit: Optional[float] = None
+    frequency: str = "weekly"
+
+class StrattonPaperTradeRequest(BaseModel):
+    tickers: list[str] = ["AAPL", "MSFT"]
+    use_llm: bool = False
+    model_provider: str = "groq"
+    model_name: str = "llama3-70b-8192"
+
+class StrattonManualTradeRequest(BaseModel):
+    ticker: str
+    action: str
+    quantity: float
+
+class StrattonPaperResetRequest(BaseModel):
+    cash: float = 100000
+    tickers: list[str] = ["AAPL", "MSFT"]
+
+# ── Analyst / Persona / Provider Metadata ─────────────────────
+STRATTON_ANALYSTS = {
+    "fundamentals": {"label": "Fundamentals", "description": "Value & Quality — PE, ROE, D/E analysis", "icon": "solar:chart-square-linear"},
+    "technical": {"label": "Technicals", "description": "Momentum & Trend — SMA, RSI, MACD", "icon": "solar:graph-up-linear"},
+    "sentiment": {"label": "Sentiment", "description": "News & Flow — keyword-driven sentiment", "icon": "solar:document-text-linear"},
+    "valuation": {"label": "Valuation", "description": "DCF & Multiples — intrinsic value", "icon": "solar:calculator-linear"},
+    "growth": {"label": "Growth", "description": "Earnings & Revenue trajectory", "icon": "solar:rocket-linear"},
+    "macro_regime": {"label": "Macro Regime", "description": "Rates, Liquidity & Sector Rotation", "icon": "solar:globe-linear"},
+}
+
+STRATTON_PERSONAS = {
+    "buffett": {"label": "Warren Buffett", "style": "Value investing with moat focus", "color": "#3b82f6"},
+    "graham": {"label": "Ben Graham", "style": "Deep value and margin of safety", "color": "#8b5cf6"},
+    "munger": {"label": "Charlie Munger", "style": "Quality at fair price", "color": "#6366f1"},
+    "burry": {"label": "Michael Burry", "style": "Contrarian deep value", "color": "#ef4444"},
+    "wood": {"label": "Cathie Wood", "style": "Disruptive innovation growth", "color": "#f59e0b"},
+    "ackman": {"label": "Bill Ackman", "style": "Activist value with catalysts", "color": "#10b981"},
+    "lynch": {"label": "Peter Lynch", "style": "Growth at a reasonable price (GARP)", "color": "#14b8a6"},
+    "damodaran": {"label": "Aswath Damodaran", "style": "Intrinsic valuation focus", "color": "#6d28d9"},
+    "druckenmiller": {"label": "Stanley Druckenmiller", "style": "Macro + momentum", "color": "#dc2626"},
+    "fisher": {"label": "Philip Fisher", "style": "Scuttlebutt growth investing", "color": "#0891b2"},
+    "pabrai": {"label": "Mohnish Pabrai", "style": "Concentrated deep value", "color": "#7c3aed"},
+    "jhunjhunwala": {"label": "Rakesh Jhunjhunwala", "style": "Growth + value hybrid", "color": "#059669"},
+}
+
+STRATTON_PROVIDERS = {
+    "groq": {"label": "Groq", "models": ["llama3-70b-8192", "llama3-8b-8192", "mixtral-8x7b-32768"]},
+    "openai": {"label": "OpenAI", "models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]},
+    "google": {"label": "Google", "models": ["gemini-1.5-flash", "gemini-1.5-pro"]},
+    "anthropic": {"label": "Anthropic", "models": ["claude-3-haiku-20240307", "claude-3-sonnet-20240229"]},
+    "ollama": {"label": "Ollama (Local)", "models": ["llama3", "mistral", "phi3"]},
+}
+
+
+@app.get("/api/analysts")
+@app.get("/api/stratton/analysts")
+async def stratton_get_analysts():
+    return {"analysts": STRATTON_ANALYSTS}
+
+
+@app.get("/api/personas")
+@app.get("/api/stratton/personas")
+async def stratton_get_personas():
+    return {"personas": STRATTON_PERSONAS}
+
+
+@app.get("/api/providers")
+@app.get("/api/stratton/providers")
+async def stratton_get_providers():
+    return {"providers": STRATTON_PROVIDERS}
+
+
+@app.post("/api/stratton/analyze")
+async def stratton_analyze(req: StrattonAnalyzeRequest):
+    """Run multi-agent hedge fund analysis using the HedgeFundAgents engine."""
+    try:
+        from app.services.multi_agents import hedge_fund_engine
+        result = await hedge_fund_engine.run_multi_agent_analysis(
+            tickers=req.tickers,
+            use_llm=req.use_llm,
+            personas=req.personas,
+            model_name=req.model_name,
+        )
+        return result
+    except Exception as e:
+        print(f"Stratton analyze error: {e}")
+        traceback.print_exc()
+        return {"error": str(e), "tickers": req.tickers, "analyst_signals": {}, "risk_adjusted_signals": [], "portfolio_output": {"positions": [], "cash_remaining": req.cash, "total_value": req.cash}}
+
+
+# ── In-Memory Paper Portfolio ────────────────────────────────
+_paper_portfolio = {
+    "cash": 100000,
+    "total_value": 100000,
+    "positions": {},
+    "trades": [],
+    "last_run": None,
+}
+
+
+@app.get("/api/paper-portfolio")
+@app.get("/api/stratton/paper-portfolio")
+async def stratton_get_paper_portfolio():
+    return _paper_portfolio
+
+
+@app.post("/api/paper-trade")
+@app.post("/api/stratton/paper-trade")
+async def stratton_paper_trade(req: StrattonPaperTradeRequest):
+    """Run one paper trading cycle using analysis."""
+    global _paper_portfolio
+    try:
+        from app.services.multi_agents import hedge_fund_engine
+        result = await hedge_fund_engine.run_multi_agent_analysis(
+            tickers=req.tickers,
+            use_llm=req.use_llm,
+            model_name=req.model_name,
+        )
+
+        portfolio_output = result.get("portfolio_output", {})
+        current_prices = {}
+
+        # Get current prices
+        for ticker in req.tickers:
+            try:
+                t = yf.Ticker(ticker)
+                info = await asyncio.to_thread(lambda: t.fast_info)
+                current_prices[ticker] = info.get("lastPrice", 0)
+            except Exception:
+                current_prices[ticker] = 0
+
+        # Apply trades
+        from datetime import datetime as dt
+        for pos in portfolio_output.get("positions", []):
+            ticker = pos["ticker"]
+            action = pos["action"].upper()
+            qty = pos.get("quantity", 0)
+            price = current_prices.get(ticker, 0)
+
+            if price <= 0 or qty <= 0:
+                continue
+
+            if action == "BUY":
+                cost = qty * price
+                if cost <= _paper_portfolio["cash"]:
+                    _paper_portfolio["cash"] -= cost
+                    existing = _paper_portfolio["positions"].get(ticker, {"shares": 0, "avg_cost": 0, "current_price": 0})
+                    old_total = existing["shares"] * existing["avg_cost"]
+                    new_shares = existing["shares"] + qty
+                    _paper_portfolio["positions"][ticker] = {
+                        "shares": new_shares,
+                        "avg_cost": (old_total + cost) / new_shares if new_shares > 0 else price,
+                        "current_price": price,
+                    }
+                    _paper_portfolio["trades"].append({"date": dt.now().isoformat(), "ticker": ticker, "action": "BUY", "quantity": qty, "price": price})
+            elif action == "SELL" and ticker in _paper_portfolio["positions"]:
+                held = _paper_portfolio["positions"][ticker]["shares"]
+                sell_qty = min(qty, held)
+                if sell_qty > 0:
+                    proceeds = sell_qty * price
+                    _paper_portfolio["cash"] += proceeds
+                    _paper_portfolio["positions"][ticker]["shares"] -= sell_qty
+                    if _paper_portfolio["positions"][ticker]["shares"] <= 0:
+                        del _paper_portfolio["positions"][ticker]
+                    _paper_portfolio["trades"].append({"date": dt.now().isoformat(), "ticker": ticker, "action": "SELL", "quantity": sell_qty, "price": price})
+
+        # Update current prices and total value
+        holdings_value = 0
+        for ticker, pos in _paper_portfolio["positions"].items():
+            pos["current_price"] = current_prices.get(ticker, pos["avg_cost"])
+            holdings_value += pos["shares"] * pos["current_price"]
+
+        _paper_portfolio["total_value"] = _paper_portfolio["cash"] + holdings_value
+        _paper_portfolio["last_run"] = dt.now().isoformat()
+
+        return {"portfolio": _paper_portfolio, "analysis": result}
+    except Exception as e:
+        print(f"Paper trade error: {e}")
+        traceback.print_exc()
+        return {"error": str(e), "portfolio": _paper_portfolio}
+
+
+@app.post("/api/paper-reset")
+@app.post("/api/stratton/paper-reset")
+async def stratton_paper_reset(req: StrattonPaperResetRequest):
+    """Reset the paper portfolio."""
+    global _paper_portfolio
+    _paper_portfolio = {
+        "cash": req.cash,
+        "total_value": req.cash,
+        "positions": {},
+        "trades": [],
+        "last_run": None,
+    }
+    return {"portfolio": _paper_portfolio}
+
+
+@app.post("/api/stratton/manual-trade")
+async def stratton_manual_trade(req: StrattonManualTradeRequest):
+    """Execute a manual trade securely using the latest yfinance price."""
+    global _paper_portfolio
+    try:
+        from datetime import datetime as dt
+        ticker = req.ticker.upper()
+        action = req.action.upper()
+        qty = req.quantity
+        
+        if qty <= 0:
+            return {"error": "Quantity must be greater than 0"}
+
+        # Fetch live price
+        t = yf.Ticker(ticker)
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = info.get("lastPrice", 0)
+
+        if price <= 0:
+            return {"error": f"Could not fetch valid price for {ticker}"}
+
+        cost = qty * price
+
+        if action == "BUY":
+            if cost > _paper_portfolio["cash"]:
+                return {"error": "Insufficient cash available", "cash": _paper_portfolio["cash"], "required": cost}
+            
+            _paper_portfolio["cash"] -= cost
+            existing = _paper_portfolio["positions"].get(ticker, {"shares": 0, "avg_cost": 0, "current_price": 0})
+            old_total = existing["shares"] * existing["avg_cost"]
+            new_shares = existing["shares"] + qty
+            _paper_portfolio["positions"][ticker] = {
+                "shares": new_shares,
+                "avg_cost": (old_total + cost) / new_shares,
+                "current_price": price,
+            }
+            _paper_portfolio["trades"].append({"date": dt.now().isoformat(), "ticker": ticker, "action": "BUY", "quantity": qty, "price": price, "total": cost})
+            
+        elif action == "SELL":
+            existing = _paper_portfolio["positions"].get(ticker)
+            if not existing or existing["shares"] < qty:
+                return {"error": "Insufficient shares available"}
+                
+            _paper_portfolio["cash"] += cost
+            existing["shares"] -= qty
+            if existing["shares"] <= 0:
+                del _paper_portfolio["positions"][ticker]
+            else:
+                existing["current_price"] = price
+            _paper_portfolio["trades"].append({"date": dt.now().isoformat(), "ticker": ticker, "action": "SELL", "quantity": qty, "price": price, "total": cost})
+        else:
+            return {"error": f"Invalid action {action}"}
+
+        # Update total value
+        holdings_value = 0
+        for sys_ticker, pos in _paper_portfolio["positions"].items():
+            holdings_value += pos["shares"] * pos["current_price"]
+            
+        _paper_portfolio["total_value"] = _paper_portfolio["cash"] + holdings_value
+        _paper_portfolio["last_run"] = dt.now().isoformat()
+
+        return {"portfolio": _paper_portfolio, "message": f"{action} {qty} {ticker} @ ${price:.2f}"}
+
+    except Exception as e:
+        print(f"Manual trade error: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/backtest")
+@app.post("/api/stratton/backtest")
+async def stratton_backtest(req: StrattonBacktestRequest):
+    """Run a simple historical backtest."""
+    try:
+        from datetime import datetime as dt, timedelta
+        end = req.end_date or dt.now().strftime("%Y-%m-%d")
+        
+        # Parse frequency
+        freq_days = {"daily": 1, "weekly": 7, "monthly": 30}.get(req.frequency, 7)
+        
+        # Get historical data for all tickers
+        histories = {}
+        for ticker in req.tickers:
+            try:
+                t = yf.Ticker(ticker)
+                hist = await asyncio.to_thread(
+                    lambda t=t: t.history(start=req.start_date, end=end)
+                )
+                if not hist.empty:
+                    histories[ticker] = hist
+            except Exception as e:
+                print(f"Backtest data error for {ticker}: {e}")
+
+        if not histories:
+            return {"error": "No historical data found", "tickers": req.tickers}
+
+        # Simple backtest simulation
+        cash = req.cash
+        positions = {}
+        trades = []
+        snapshots = []
+        all_dates = set()
+        
+        for hist in histories.values():
+            all_dates.update(hist.index.strftime("%Y-%m-%d").tolist())
+        
+        sorted_dates = sorted(all_dates)
+        
+        # Filter by frequency
+        trade_dates = sorted_dates[::freq_days]
+        
+        from app.services.multi_agents import hedge_fund_engine
+        
+        initial_value = cash
+        
+        for trade_date in trade_dates[:20]:  # Cap at 20 rebalance cycles for speed
+            # Get prices at this date
+            date_prices = {}
+            for ticker, hist in histories.items():
+                mask = hist.index.strftime("%Y-%m-%d") <= trade_date
+                if mask.any():
+                    date_prices[ticker] = float(hist.loc[mask].iloc[-1]["Close"])
+
+            # Simple equal-weight rebalancing
+            target_per_stock = (cash + sum(
+                positions.get(t, {}).get("shares", 0) * date_prices.get(t, 0)
+                for t in req.tickers
+            )) / len(req.tickers)
+
+            for ticker in req.tickers:
+                price = date_prices.get(ticker, 0)
+                if price <= 0:
+                    continue
+                
+                current_shares = positions.get(ticker, {}).get("shares", 0)
+                current_value = current_shares * price
+                diff = target_per_stock - current_value
+                
+                if abs(diff) > price:  # Only trade if difference is meaningful
+                    if diff > 0:
+                        qty = int(diff / price)
+                        cost = qty * price
+                        if cost <= cash:
+                            cash -= cost
+                            old = positions.get(ticker, {"shares": 0, "avg_cost": 0})
+                            new_shares = old["shares"] + qty
+                            positions[ticker] = {
+                                "shares": new_shares,
+                                "avg_cost": ((old["shares"] * old["avg_cost"]) + cost) / new_shares if new_shares > 0 else price,
+                            }
+                            trades.append({"date": trade_date, "ticker": ticker, "action": "BUY", "quantity": qty, "price": round(price, 2)})
+                    elif diff < 0:
+                        qty = min(current_shares, int(abs(diff) / price))
+                        if qty > 0:
+                            cash += qty * price
+                            positions[ticker]["shares"] -= qty
+                            trades.append({"date": trade_date, "ticker": ticker, "action": "SELL", "quantity": qty, "price": round(price, 2)})
+
+            # Snapshot
+            total = cash + sum(
+                positions.get(t, {}).get("shares", 0) * date_prices.get(t, 0)
+                for t in req.tickers
+            )
+            snapshots.append({"date": trade_date, "total_value": round(total, 2), "cash": round(cash, 2)})
+
+        # Final summary
+        final_value = snapshots[-1]["total_value"] if snapshots else initial_value
+        total_return = (final_value / initial_value - 1) * 100
+        max_dd = 0
+        peak = initial_value
+        for s in snapshots:
+            if s["total_value"] > peak:
+                peak = s["total_value"]
+            dd = (peak - s["total_value"]) / peak * 100
+            if dd > max_dd:
+                max_dd = dd
+
+        return {
+            "tickers": req.tickers,
+            "results": {
+                "summary": {
+                    "initial_capital": f"${initial_value:,.0f}",
+                    "final_value": f"${final_value:,.0f}",
+                    "total_return": f"{total_return:+.2f}%",
+                    "max_drawdown": f"-{max_dd:.2f}%",
+                    "total_trades": len(trades),
+                    "period": f"{req.start_date} to {end}",
+                },
+                "trades": trades,
+                "snapshots": snapshots,
+            }
+        }
+    except Exception as e:
+        print(f"Backtest error: {e}")
+        traceback.print_exc()
+        return {"error": str(e), "tickers": req.tickers}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

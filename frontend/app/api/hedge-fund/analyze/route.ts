@@ -5,7 +5,7 @@ const STRATTON_API_URL = process.env.STRATTON_API_URL || 'http://localhost:8000'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const res = await fetch(`${STRATTON_API_URL}/api/analyze`, {
+    const res = await fetch(`${STRATTON_API_URL}/api/stratton/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

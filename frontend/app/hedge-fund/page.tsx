@@ -6,6 +6,9 @@ import GradientText from '@/components/reactbits/GradientText';
 import SpotlightCard from '@/components/reactbits/SpotlightCard';
 import Particles from '@/components/reactbits/Particles';
 import StarBorder from '@/components/reactbits/StarBorder';
+import AdvancedChart from '@/components/AdvancedChart';
+import EquityChart from '@/components/EquityChart';
+import PerformanceTable from '@/components/PerformanceTable';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AnalystInfo { label: string; description: string; icon: string; }
@@ -134,12 +137,30 @@ export default function HedgeFundPage() {
   const [ptCash, setPtCash] = useState(100000);
   const [ptLoading, setPtLoading] = useState(false);
   const [ptError, setPtError] = useState('');
+  const [activePaperTicker, setActivePaperTicker] = useState<string>('');
+  const [paperChartData, setPaperChartData] = useState<{ ohlc: any[]; volume: any[]; markers: any[] }>({ ohlc: [], volume: [], markers: [] });
+  const [btEquityData, setBtEquityData] = useState<any[]>([]);
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   useEffect(() => {
     checkBackend();
     fetchPaperPortfolio();
   }, []);
+
+  useEffect(() => {
+    if (activePaperTicker) fetchHistoryForPaperChart(activePaperTicker);
+  }, [activePaperTicker, paperPortfolio?.trades]); // Re-fetch if trades change to update markers
+
+  useEffect(() => {
+    if (btResult?.results?.snapshots) {
+      setBtEquityData(btResult.results.snapshots.map((s: any) => ({
+        time: s.date,
+        value: s.total_value,
+      })));
+    } else {
+      setBtEquityData([]);
+    }
+  }, [btResult]);
 
   const checkBackend = async () => {
     try {
@@ -163,8 +184,47 @@ export default function HedgeFundPage() {
   const fetchPaperPortfolio = async () => {
     try {
       const res = await fetch('/api/hedge-fund/paper-portfolio');
-      if (res.ok) setPaperPortfolio(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setPaperPortfolio(data);
+        if (!activePaperTicker && Object.keys(data.positions || {}).length > 0) {
+          setActivePaperTicker(Object.keys(data.positions)[0]);
+        }
+      }
     } catch { }
+  };
+
+  const fetchHistoryForPaperChart = async (ticker: string) => {
+    try {
+      const r = await fetch(`/api/history/${encodeURIComponent(ticker)}?period=6mo`);
+      const d = await r.json();
+      if (d.history) {
+        const ohlc = d.history.map((h: any) => ({
+          time: h.date, open: h.open, high: h.high, low: h.low, close: h.close
+        }));
+        const vol = d.history.map((h: any) => ({
+          time: h.date, value: h.volume, color: h.close > h.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+        }));
+        
+        // Match paper trades to markers
+        const tradeMarkers: any[] = [];
+        if (paperPortfolio?.trades) {
+          paperPortfolio.trades.forEach((t: any) => {
+            if (t.ticker === ticker) {
+              const dtDate = t.date?.split('T')[0] || t.timestamp?.split('T')[0] || new Date().toISOString().split('T')[0];
+              tradeMarkers.push({
+                time: dtDate,
+                position: t.action === 'BUY' ? 'belowBar' : 'aboveBar',
+                color: t.action === 'BUY' ? '#10b981' : '#ef4444',
+                shape: t.action === 'BUY' ? 'arrowUp' : 'arrowDown',
+                text: `${t.action} @ ${t.price?.toFixed(2)}`,
+              });
+            }
+          });
+        }
+        setPaperChartData({ ohlc, volume: vol, markers: tradeMarkers });
+      }
+    } catch (e) { console.error('Error fetching chart data', e); }
   };
 
   // ── Analysis ────────────────────────────────────────────────────────────────
@@ -513,28 +573,31 @@ export default function HedgeFundPage() {
                       Analyst Signals
                       <span className="text-[10px] text-white/40 ml-auto">{analysisResult.timestamp ? new Date(analysisResult.timestamp).toLocaleTimeString() : ''}</span>
                     </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                    <div className="overflow-x-auto -mx-1 px-1">
+                      <table className="w-full text-sm border-separate border-spacing-0">
                         <thead>
-                          <tr className="border-b border-white/5">
-                            <th className="text-left text-[10px] text-white/30 uppercase tracking-widest py-2 pr-4">Agent</th>
-                            <th className="text-left text-[10px] text-white/30 uppercase tracking-widest py-2 pr-4">Ticker</th>
-                            <th className="text-left text-[10px] text-white/30 uppercase tracking-widest py-2 pr-4">Signal</th>
-                            <th className="text-left text-[10px] text-white/30 uppercase tracking-widest py-2 pr-4 w-32">Confidence</th>
-                            <th className="text-left text-[10px] text-white/30 uppercase tracking-widest py-2">Reasoning</th>
+                          <tr className="bg-white/[0.02]">
+                            <th className="text-left text-[9px] text-white/30 uppercase tracking-[0.2em] py-3 px-4 border-y border-white/5 rounded-l-lg font-bold">Analyst Entity</th>
+                            <th className="text-left text-[9px] text-white/30 uppercase tracking-[0.2em] py-3 px-4 border-y border-white/5 font-bold">Ticker</th>
+                            <th className="text-left text-[9px] text-white/30 uppercase tracking-[0.2em] py-3 px-4 border-y border-white/5 font-bold">Strategic Signal</th>
+                            <th className="text-left text-[9px] text-white/30 uppercase tracking-[0.2em] py-3 px-4 border-y border-white/5 font-bold w-40">Confidence Interval</th>
+                            <th className="text-left text-[9px] text-white/30 uppercase tracking-[0.2em] py-3 px-4 border-y border-white/5 rounded-r-lg font-bold">Institutional Reasoning</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.03]">
                           {Object.entries(analysisResult.analyst_signals).flatMap(([agentId, signals]) =>
                             (signals as AnalystSignal[]).map((sig, i) => (
-                              <tr key={`${agentId}-${i}`} className="hover:bg-white/[0.02] transition-colors">
-                                <td className="py-2.5 pr-4">
-                                  <span className="text-[11px] text-purple-300/80 font-medium">{agentId.replace('_analyst', '').replace('_', ' ')}</span>
+                              <tr key={`${agentId}-${i}`} className="hover:bg-white/[0.03] transition-all group">
+                                <td className="py-4 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-purple-500/40 group-hover:bg-purple-400 group-hover:scale-125 transition-all shadow-[0_0_8px_rgba(168,85,247,0.4)]" />
+                                    <span className="text-[11px] text-white font-semibold tracking-tight">{agentId.replace('_analyst', '').replace(/_/g, ' ').toUpperCase()}</span>
+                                  </div>
                                 </td>
-                                <td className="py-2.5 pr-4 font-mono text-white">{sig.ticker}</td>
-                                <td className="py-2.5 pr-4"><SignalBadge signal={sig.signal} /></td>
-                                <td className="py-2.5 pr-4 w-32"><ConfidenceBar value={sig.confidence} /></td>
-                                <td className="py-2.5 text-[11px] text-white/40 max-w-xs truncate">{sig.reasoning}</td>
+                                <td className="py-4 px-4 font-mono text-white font-bold">{sig.ticker}</td>
+                                <td className="py-4 px-4"><SignalBadge signal={sig.signal} /></td>
+                                <td className="py-4 px-4 w-40"><ConfidenceBar value={sig.confidence} /></td>
+                                <td className="py-4 px-4 text-[11px] text-white/40 max-w-xs truncate leading-relaxed group-hover:text-white/70 transition-colors italic">"{sig.reasoning}"</td>
                               </tr>
                             ))
                           )}
@@ -695,26 +758,38 @@ export default function HedgeFundPage() {
                 <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(16,185,129,0.1)">
                   <h3 className="text-sm font-medium text-white mb-5">Backtest Results — {btResult.tickers?.join(', ')}</h3>
                   {btResult.results?.summary && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                      {Object.entries(btResult.results.summary).map(([k, v]) => (
-                        <div key={k} className="p-4 rounded-xl bg-black/40 border border-white/5">
-                          <div className="text-[10px] text-white/40 uppercase tracking-widest mb-1">{k.replace(/_/g, ' ')}</div>
-                          <div className="text-lg font-medium text-white">{String(v)}</div>
-                        </div>
-                      ))}
+                    <div className="mb-8">
+                       <h4 className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold mb-4">Key Performance Indicators</h4>
+                       <PerformanceTable data={btEquityData} baseValue={btCash} />
                     </div>
                   )}
+                  {btEquityData.length > 0 && (
+                    <div className="mb-10 p-1 bg-gradient-to-b from-white/10 to-transparent rounded-2xl">
+                      <div className="bg-black/40 backdrop-blur-xl rounded-[calc(1rem-4px)] p-6">
+                        <EquityChart data={btEquityData} baseValue={btCash} height={400} />
+                      </div>
+                    </div>
+                  )}
+
                   {btResult.results?.trades && (
                     <div>
                       <h4 className="text-xs text-white/40 uppercase tracking-widest mb-3">Trade Log</h4>
-                      <div className="max-h-96 overflow-y-auto space-y-2 scrollbar-hide">
-                        {btResult.results.trades.slice(0, 50).map((t: any, i: number) => (
-                          <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/40 border border-white/5 text-xs">
-                            <span className={`px-2 py-0.5 rounded font-bold ${t.action === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.action}</span>
-                            <span className="font-mono text-white">{t.ticker}</span>
-                            <span className="text-white/40">×{t.quantity}</span>
-                            <span className="text-white/60">@ ${t.price?.toFixed(2)}</span>
-                            <span className="ml-auto text-white/30">{t.date}</span>
+                      <div className="max-h-[500px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                        {btResult.results.trades.slice(0, 100).map((t: any, i: number) => (
+                          <div key={i} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
+                            <div className={`w-1 h-8 rounded-full ${t.action === 'BUY' ? 'bg-emerald-500/40' : 'bg-red-500/40'}`} />
+                            <div className={`px-3 py-1 rounded text-[10px] font-black tracking-tighter ${t.action === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{t.action}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono text-white text-sm font-bold tracking-tight">{t.ticker}</span>
+                                <span className="text-white/30 text-[10px] uppercase font-bold tracking-widest">x{t.quantity}</span>
+                              </div>
+                              <div className="text-[10px] text-white/40 font-mono mt-0.5">${t.price?.toLocaleString(undefined, { minimumFractionDigits: 2 })} per share</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-white text-[11px] font-bold">${(t.price * t.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                              <div className="text-[10px] text-white/20 mt-0.5">{t.date}</div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -783,22 +858,80 @@ export default function HedgeFundPage() {
                     ))}
                   </div>
 
+                  {/* Advanced Chart */}
+                  <div className="glass-panel text-white rounded-2xl border border-white/10 p-5 mb-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2">
+                        <iconify-icon icon="solar:chart-square-linear" className="text-blue-400" />
+                        Trading View
+                      </h3>
+                      <div className="flex gap-2 flex-wrap">
+                        {Object.keys(paperPortfolio.positions || {}).length > 0 ? (
+                          Object.keys(paperPortfolio.positions).map(ticker => (
+                            <button key={ticker} onClick={() => setActivePaperTicker(ticker)} className={`text-[10px] px-3 py-1 rounded-full uppercase tracking-widest transition-colors ${activePaperTicker === ticker ? 'bg-blue-500 text-white font-bold' : 'bg-white/10 text-white/50 hover:bg-white/20'}`}>
+                              {ticker}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-white/30 uppercase tracking-widest">No Active Positions</span>
+                        )}
+                      </div>
+                    </div>
+                    {activePaperTicker && paperChartData.ohlc.length > 0 ? (
+                      <div className="p-1 bg-gradient-to-b from-blue-500/10 to-transparent rounded-2xl overflow-hidden">
+                        <AdvancedChart data={paperChartData.ohlc} volumeData={paperChartData.volume} markers={paperChartData.markers} height={450} ticker={activePaperTicker} />
+                      </div>
+                    ) : (
+                      <div className="h-[350px] flex items-center justify-center border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
+                        <p className="text-sm text-white/30">
+                          {activePaperTicker ? 'Loading Chart Data...' : 'Select a ticker to view technicals'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Positions */}
                   {Object.keys(paperPortfolio.positions).length > 0 && (
-                    <SpotlightCard className="glass-panel rounded-2xl p-5" spotlightColor="rgba(79,143,255,0.1)">
-                      <h3 className="text-sm font-medium text-white mb-4">Open Positions</h3>
-                      <div className="space-y-2">
+                    <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(79,143,255,0.15)">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <iconify-icon icon="solar:wallet-bold" className="text-blue-400" />
+                          ALGORITHMIC POSITIONS
+                        </h3>
+                        <span className="text-[10px] text-white/30 font-mono tracking-widest">REAL-TIME VALUATION</span>
+                      </div>
+                      <div className="space-y-3">
                         {Object.entries(paperPortfolio.positions).map(([ticker, pos]) => {
                           const pnl = (pos.current_price - pos.avg_cost) * pos.shares;
                           const pnlPct = ((pos.current_price / pos.avg_cost) - 1) * 100;
                           return (
-                            <div key={ticker} className="flex items-center gap-4 p-4 rounded-xl bg-black/40 border border-white/5">
-                              <div className="font-mono text-white font-medium w-16">{ticker}</div>
-                              <div className="text-xs text-white/40">{pos.shares} shares</div>
-                              <div className="text-xs text-white/60">avg ${pos.avg_cost?.toFixed(2)}</div>
-                              <div className="text-xs text-white/60">now ${pos.current_price?.toFixed(2)}</div>
-                              <div className={`ml-auto text-sm font-medium ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+                            <div key={ticker} className="group relative flex items-center gap-4 p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all">
+                              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-2/3 rounded-r-full bg-blue-500/0 group-hover:bg-blue-500/40 transition-all" />
+                              <div className="flex flex-col">
+                                <span className="font-mono text-lg text-white font-black tracking-tighter leading-none">{ticker}</span>
+                                <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] mt-1 font-bold">Equity Asset</span>
+                              </div>
+                              <div className="flex-1 grid grid-cols-3 gap-4 border-l border-white/5 pl-6 ml-2">
+                                <div>
+                                  <div className="text-[9px] text-white/20 uppercase tracking-widest font-bold mb-1">Exposure</div>
+                                  <div className="text-xs text-white/70 font-mono">{pos.shares} <span className="text-[10px] text-white/30">units</span></div>
+                                </div>
+                                <div>
+                                  <div className="text-[9px] text-white/20 uppercase tracking-widest font-bold mb-1">Cost Basis</div>
+                                  <div className="text-xs text-white/70 font-mono">${pos.avg_cost?.toFixed(2)}</div>
+                                </div>
+                                <div>
+                                  <div className="text-[9px] text-white/20 uppercase tracking-widest font-bold mb-1">Market</div>
+                                  <div className="text-xs text-white font-bold font-mono">${pos.current_price?.toFixed(2)}</div>
+                                </div>
+                              </div>
+                              <div className="text-right pl-4">
+                                <div className={`text-sm font-black font-mono ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {pnl >= 0 ? '▲' : '▼'} ${Math.abs(pnl).toLocaleString()}
+                                </div>
+                                <div className={`text-[10px] font-bold mt-0.5 ${pnl >= 0 ? 'text-emerald-500/50' : 'text-red-500/50'}`}>
+                                  {pnl >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                                </div>
                               </div>
                             </div>
                           );
@@ -809,17 +942,28 @@ export default function HedgeFundPage() {
 
                   {/* Trade History */}
                   {paperPortfolio.trades?.length > 0 && (
-                    <SpotlightCard className="glass-panel rounded-2xl p-5" spotlightColor="rgba(79,143,255,0.1)">
-                      <h3 className="text-sm font-medium text-white mb-4">Recent Trades</h3>
-                      <div className="max-h-72 overflow-y-auto space-y-2 scrollbar-hide">
-                        {[...paperPortfolio.trades].reverse().slice(0, 30).map((t, i) => (
-                          <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/40 border border-white/5 text-xs">
-                            <span className={`px-2 py-0.5 rounded font-bold ${t.action === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>{t.action}</span>
-                            <span className="font-mono text-white">{t.ticker}</span>
-                            <span className="text-white/40">×{t.quantity}</span>
-                            <span className="text-white/60">@ ${t.price?.toFixed(2)}</span>
-                            <span className="text-white/40 ml-auto">${t.total?.toFixed(0)}</span>
-                            <span className="text-white/20">{t.timestamp ? new Date(t.timestamp).toLocaleDateString() : ''}</span>
+                    <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(79,143,255,0.1)">
+                      <h3 className="text-sm font-bold text-white mb-6 uppercase tracking-widest flex items-center gap-2">
+                        <iconify-icon icon="solar:history-bold" className="text-blue-400/60" />
+                        Execution Journal
+                      </h3>
+                      <div className="max-h-96 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                        {[...paperPortfolio.trades].reverse().slice(0, 50).map((t, i) => (
+                          <div key={i} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${t.action === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                              {t.action[0]}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-white text-sm font-bold tracking-tight">{t.ticker}</span>
+                                <span className="text-white/20 text-[9px] uppercase font-bold tracking-[0.2em]">{t.action}</span>
+                              </div>
+                              <div className="text-[10px] text-white/40 font-mono mt-0.5">{t.timestamp ? new Date(t.timestamp).toLocaleString() : ''}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-white text-[11px] font-bold">${t.total?.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                              <div className="text-[10px] text-white/30 font-mono mt-0.5">{t.quantity} @ ${t.price?.toFixed(2)}</div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -899,6 +1043,38 @@ export default function HedgeFundPage() {
                 </div>
               )}
             </div>
+
+            {/* Risk Equity Curve */}
+            <SpotlightCard className="glass-panel rounded-2xl p-8" spotlightColor="rgba(239,68,68,0.1)">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-widest">
+                  <iconify-icon icon="solar:graph-down-bold" className="text-red-500" />
+                  STRESS LEVEL & DRAWDOWN ANALYSIS
+                </h3>
+                <div className="flex gap-4">
+                  <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-white/40 uppercase">Global CAP: 20%</div>
+                  <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-white/40 uppercase">Stop: 8%</div>
+                </div>
+              </div>
+              {btEquityData.length > 0 ? (
+                <div className="space-y-8">
+                  <div className="p-1 bg-gradient-to-b from-red-500/10 to-transparent rounded-2xl overflow-hidden">
+                    <EquityChart data={btEquityData} baseValue={btCash} height={400} />
+                  </div>
+                  <div className="pt-4 border-t border-white/5">
+                    <h4 className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold mb-6">Simulation Efficiency Metrics</h4>
+                    <PerformanceTable data={btEquityData} baseValue={btCash} />
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[400px] flex items-center justify-center border border-dashed border-white/10 rounded-3xl bg-white/[0.01]">
+                   <div className="text-center">
+                    <iconify-icon icon="solar:shield-danger-bold-duotone" width="48" className="text-white/10 mb-4" />
+                    <p className="text-sm text-white/30 font-medium tracking-tight">Requires Backtest Payload to Initialize Core Stress Monitor</p>
+                   </div>
+                </div>
+              )}
+            </SpotlightCard>
 
             {/* Always-On Rules */}
             <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(82,39,255,0.05)">

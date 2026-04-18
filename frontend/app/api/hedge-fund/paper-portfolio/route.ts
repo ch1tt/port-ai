@@ -4,7 +4,7 @@ const STRATTON_API_URL = process.env.STRATTON_API_URL || 'http://localhost:8000'
 
 export async function GET() {
   try {
-    const res = await fetch(`${STRATTON_API_URL}/api/paper-portfolio`);
+    const res = await fetch(`${STRATTON_API_URL}/api/stratton/paper-portfolio`);
     if (!res.ok) throw new Error(`Stratton API error: ${res.status}`);
     return NextResponse.json(await res.json());
   } catch (error: any) {
@@ -15,7 +15,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const endpoint = body._action === 'reset' ? '/api/paper-reset' : '/api/paper-trade';
+    const endpoint = body._action === 'reset' ? '/api/stratton/paper-reset' : '/api/stratton/paper-trade';
     delete body._action;
 
     const res = await fetch(`${STRATTON_API_URL}${endpoint}`, {
