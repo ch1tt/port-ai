@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -9,6 +8,7 @@ export const metadata: Metadata = {
 
 import Header from '@/components/Header'
 import { AuthProvider } from '@/context/AuthContext'
+import AuthLanyardBadge from '@/components/AuthLanyardBadge'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -24,16 +24,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
              style={{ 
                maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)', 
                WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
-               opacity: 0.6 // Use opacity instead of filters for better performance
+               opacity: 0.6
              }}>
           <div data-us-project="bmaMERjX2VZDtPrh4Zwx" className="absolute w-full h-full left-0 top-0 -z-10 pointer-events-none"></div>
-          {/* Subtle color overlay instead of hue-rotate */}
           <div className="absolute inset-0 bg-blue-500/5 mix-blend-overlay pointer-events-none"></div>
         </div>
 
         <AuthProvider>
           <Header />
           {children}
+          {/* Mini lanyard badge — only shown when user is logged in */}
+          <AuthLanyardBadge />
         </AuthProvider>
         
         {/* Init UnicornStudio wrapper script */}

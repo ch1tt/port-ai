@@ -3,14 +3,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Canvas, extend, useFrame } from '@react-three/fiber';
-import { useGLTF, useTexture, Environment, Lightformer } from '@react-three/drei';
+import { Environment, Lightformer } from '@react-three/drei';
 import { BallCollider, CuboidCollider, Physics, RigidBody, useRopeJoint, useSphericalJoint } from '@react-three/rapier';
 import { MeshLineGeometry, MeshLineMaterial } from 'meshline';
-
-// replace with your own imports, see the usage snippet for details
-// import cardGLB from './card.glb';
-// import lanyard from './lanyard.png';
-
 import * as THREE from 'three';
 import './Lanyard.css';
 
@@ -71,6 +66,7 @@ export default function Lanyard({ position = [0, 0, 30], gravity = [0, -40, 0], 
     </div>
   );
 }
+
 function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
   const band = useRef<any>(null),
     fixed = useRef<any>(null),
@@ -83,12 +79,6 @@ function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
     rot = new THREE.Vector3(),
     dir = new THREE.Vector3();
   const segmentProps: any = { type: 'dynamic', canSleep: true, colliders: false, angularDamping: 4, linearDamping: 4 };
-  
-  // NOTE: card.glb and lanyard.png require specific asset loading
-  // You MUST have the card.glb and lanyard.png files in your project and import them
-  const nodes: any = { card: { geometry: null }, clip: { geometry: null }, clamp: { geometry: null } };
-  const materials: any = { base: { map: null }, metal: null };
-  const texture: any = null; // replace with useTexture(lanyard) when available
 
   const [curve] = useState<any>(
     () =>
@@ -134,7 +124,7 @@ function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
       curve.points[2].copy(j1.current.lerped);
       curve.points[3].copy(fixed.current.translation());
       if (band.current) {
-          band.current.geometry.setPoints(curve.getPoints(isMobile ? 16 : 32));
+        band.current.geometry.setPoints(curve.getPoints(isMobile ? 16 : 32));
       }
       ang.copy(card.current?.angvel() || new THREE.Vector3());
       rot.copy(card.current?.rotation() || new THREE.Vector3());
@@ -143,9 +133,6 @@ function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
   });
 
   curve.curveType = 'chordal';
-  if (texture) {
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  }
 
   return (
     <>
@@ -160,11 +147,12 @@ function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
         <RigidBody position={[1.5, 0, 0]} ref={j3} {...segmentProps}>
           <BallCollider args={[0.1]} />
         </RigidBody>
+        {/* User Card */}
         <RigidBody position={[2, 0, 0]} ref={card} {...segmentProps} type={dragged ? 'kinematicPosition' : 'dynamic'}>
-          <CuboidCollider args={[0.8, 1.125, 0.01]} />
+          <CuboidCollider args={[0.6, 0.9, 0.05]} />
           <group
-            scale={2.25}
-            position={[0, -1.2, -0.05]}
+            scale={1.5}
+            position={[0, -0.8, -0.05]}
             onPointerOver={() => hover(true)}
             onPointerOut={() => hover(false)}
             onPointerUp={e => ((e.target as any)?.releasePointerCapture(e.pointerId), drag(false))}
@@ -173,35 +161,41 @@ function Band({ maxSpeed = 50, minSpeed = 0, isMobile = false }) {
               drag(new THREE.Vector3().copy(e.point).sub(vec.copy(card.current.translation())))
             )}
           >
-            {nodes.card.geometry && (
-              <mesh geometry={nodes.card.geometry}>
-                <meshPhysicalMaterial
-                  map={materials.base.map}
-                  map-anisotropy={16}
-                  clearcoat={isMobile ? 0 : 1}
-                  clearcoatRoughness={0.15}
-                  roughness={0.9}
-                  metalness={0.8}
-                />
-              </mesh>
-            )}
-            {nodes.clip.geometry && materials.metal && (
-              <mesh geometry={nodes.clip.geometry} material={materials.metal} material-roughness={0.3} />
-            )}
-            {nodes.clamp.geometry && materials.metal && <mesh geometry={nodes.clamp.geometry} material={materials.metal} />}
+            {/* The base card (white plastic) */}
+            <mesh>
+              <boxGeometry args={[1.2, 1.8, 0.04]} />
+              <meshPhysicalMaterial color="#ffffff" clearcoat={1} clearcoatRoughness={0.15} roughness={0.5} metalness={0.1} />
+            </mesh>
+            {/* Display profile details here or simple design */}
+            <mesh position={[0, 0.4, 0.021]}>
+              <circleGeometry args={[0.3, 32]} />
+              <meshBasicMaterial color="#34d399" />
+            </mesh>
+            <mesh position={[0, -0.2, 0.021]}>
+               <planeGeometry args={[0.8, 0.1]} />
+               <meshBasicMaterial color="#4f8fff" />
+            </mesh>
+            <mesh position={[0, -0.4, 0.021]}>
+               <planeGeometry args={[0.6, 0.05]} />
+               <meshBasicMaterial color="#aaaaaa" />
+            </mesh>
+
+            {/* A small clip on top connecting to the lanyard */}
+            <mesh position={[0, 1.0, 0]}>
+              <boxGeometry args={[0.3, 0.2, 0.1]} />
+              <meshStandardMaterial color="#888888" metalness={1} roughness={0.2} />
+            </mesh>
           </group>
         </RigidBody>
       </group>
       <mesh ref={band}>
         <meshLineGeometry />
         <meshLineMaterial
-          color="white"
+          color="#34d399"
           depthTest={false}
           resolution={isMobile ? [1000, 2000] : [1000, 1000]}
-          useMap={!!texture}
-          map={texture}
-          repeat={[-4, 1]}
-          lineWidth={1}
+          useMap={false}
+          lineWidth={0.5}
         />
       </mesh>
     </>
