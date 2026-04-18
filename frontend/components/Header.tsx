@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+
 import { useAuth } from '@/context/AuthContext';
+import ShinyText from './reactbits/ShinyText';
+import GooeyNav from './reactbits/GooeyNav/GooeyNav';
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -35,29 +38,35 @@ export default function Header() {
                <iconify-icon icon="solar:shield-check-bold" width="22"></iconify-icon>
             </div>
           </div>
-          <span className="text-lg font-bold tracking-tighter shimmer-text">PortAI</span>
+          <span className="text-lg font-bold tracking-tighter">
+            <ShinyText text="PortAI" speed={3} color="#e5e5e5" shineColor="#ffffff" className="text-lg font-bold tracking-tighter" />
+          </span>
         </Link>
         
-        {/* Navigation Links */}
-        <div className="hidden md:flex items-center gap-10 relative z-10">
-          {[
-            { name: 'Markets', href: '/#markets' },
-            { name: 'Portfolios', href: '/portfolios' },
-            { name: 'Intelligence', href: '/intelligence' },
-            { name: 'Sectors', href: '/sectors' }
-          ].map((item) => (
-            <Link key={item.name} href={item.href} 
-              className="text-[13px] font-medium text-white/50 hover:text-white transition-all duration-300 luxury-nav-link py-1">
-              {item.name}
-            </Link>
-          ))}
+        {/* Navigation Links — GooeyNav */}
+        <div className="hidden md:flex items-center relative z-10">
+          <GooeyNav
+            items={[
+              { label: 'Markets', href: '/#markets' },
+              { label: 'Portfolios', href: '/portfolios' },
+              { label: 'Intelligence', href: '/intelligence' },
+              { label: 'Sectors', href: '/sectors' },
+            ]}
+            particleCount={12}
+            particleDistances={[80, 8]}
+            particleR={80}
+            animationTime={550}
+            timeVariance={250}
+            colors={[1, 2, 3, 1, 2, 4]}
+            initialActiveIndex={0}
+          />
         </div>
 
         {/* Action Section */}
         <div className="flex items-center gap-6 relative z-10">
           <div className="hidden lg:flex items-center gap-2 text-[10px] uppercase tracking-widest bg-white/[0.03] px-4 py-2 rounded-full border border-white/10 group hover:border-emerald-500/30 transition-colors">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ticker-live shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
-            <span className="text-emerald-400/80 font-semibold">AI LIVE ANALYSIS</span>
+            <ShinyText text="AI LIVE ANALYSIS" speed={2.5} color="rgba(52,211,153,0.8)" shineColor="#ffffff" className="text-[10px] uppercase tracking-widest font-semibold" />
           </div>
 
           {user ? (

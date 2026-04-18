@@ -7,6 +7,16 @@ import DetailModal from '../components/DetailModal';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+// ReactBits Components
+import ShinyText from '../components/reactbits/ShinyText';
+import GradientText from '../components/reactbits/GradientText';
+import CountUp from '../components/reactbits/CountUp';
+import SpotlightCard from '../components/reactbits/SpotlightCard';
+import StarBorder from '../components/reactbits/StarBorder';
+import Particles from '../components/reactbits/Particles';
+import LogoLoop from '../components/reactbits/LogoLoop/LogoLoop';
+import TargetCursor from '../components/reactbits/TargetCursor/TargetCursor';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://portai-xsw3.onrender.com';
 
 interface Analysis {
@@ -222,19 +232,43 @@ export default function Dashboard() {
 
   return (
     <main className="w-full h-full relative z-10">
+      <TargetCursor 
+        spinDuration={2}
+        hideDefaultCursor={true}
+        parallaxOn={true}
+        targetSelector=".cursor-target"
+      />
 
-      {/* Hero Section with Globe */}
+      {/* Hero Section with Globe + Particles Background */}
       <section className="overflow-hidden pt-32 pb-20 relative border-b border-white/5 bg-black/50">
-          <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-12 items-center">
+          {/* Particles Background */}
+          <div className="absolute inset-0 z-0 pointer-events-none opacity-40">
+            <Particles
+              particleCount={120}
+              particleSpread={15}
+              speed={0.08}
+              particleColors={['#4f8fff', '#a78bfa', '#34d399', '#60a5fa']}
+              alphaParticles={true}
+              particleBaseSize={80}
+              sizeRandomness={0.8}
+              cameraDistance={25}
+              className="w-full h-full"
+            />
+          </div>
+
+          <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-12 items-center relative z-10">
               
               {/* Hero Content */}
               <div className="z-10 relative">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-[10px] tracking-wide text-blue-400 mb-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-[10px] tracking-wide mb-6">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-                      SMART AI-POWERED INSIGHTS
+                      <ShinyText text="SMART AI-POWERED INSIGHTS" speed={3} color="#60a5fa" shineColor="#ffffff" className="text-[10px] tracking-wide font-medium" />
                   </div>
-                  <h1 className="text-5xl md:text-7xl font-medium tracking-tighter leading-[1.1] mb-6 gradient-text">
-                      Your personal <br/> AI financial analyst.
+                  <h1 className="text-5xl md:text-7xl font-medium tracking-tighter leading-[1.1] mb-6">
+                      Your personal <br/>
+                      <GradientText colors={['#4f8fff', '#a78bfa', '#34d399', '#4f8fff']} animationSpeed={5} className="inline-flex text-5xl md:text-7xl font-medium tracking-tighter">
+                        AI financial analyst.
+                      </GradientText>
                   </h1>
                   <p className="text-white/60 text-lg md:text-xl font-light mb-8 max-w-md leading-relaxed">
                       Understand the Indian stock market with ease. Get clear, real-time insights, breaking news, and simple AI-powered analysis for your portfolio.
@@ -247,14 +281,14 @@ export default function Dashboard() {
                           <span className="text-[11px] text-emerald-400 font-medium">All Systems Operational</span>
                       </div>
                       <div className="text-xs text-white/40">
-                          5+ Live Data Sources
+                          <ShinyText text="5+ Live Data Sources" speed={4} color="#9ca3af" shineColor="#e5e7eb" className="text-xs" />
                       </div>
                   </div>
               </div>
 
               {/* 3D Globe Visualization */}
               <div className="relative h-[400px] w-full flex items-center justify-center">
-                  <div className="relative w-full aspect-square max-w-md glass-panel rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center">
+                  <SpotlightCard className="relative w-full aspect-square max-w-md rounded-3xl shadow-2xl flex items-center justify-center glass-panel" spotlightColor="rgba(79, 143, 255, 0.15)">
                       <AnimatedGlobe />
                       
                       {/* Floating UI on Globe */}
@@ -280,7 +314,7 @@ export default function Dashboard() {
                               <span className="text-xs text-emerald-400 font-medium">+ LIVE</span>
                           </div>
                       </div>
-                  </div>
+                  </SpotlightCard>
                   
                   {/* Background Glow */}
                   <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-blue-500/10 blur-[100px] rounded-full pointer-events-none"></div>
@@ -310,10 +344,14 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {Object.entries(market).length > 0 ? Object.entries(market).map(([name, data]) => (
+                      <SpotlightCard
+                        key={name}
+                        className="rounded-xl glass-panel border border-white/5 hover:border-white/10 cursor-pointer"
+                        spotlightColor={data.change_pct >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)'}
+                      >
                       <button 
-                        key={name} 
                         onClick={() => openStockModal(name, data)}
-                        className="glass-panel text-left rounded-xl p-5 hover:bg-white/[0.04] transition-all group border border-white/5 hover:border-white/10 outline outline-1 outline-transparent hover:outline-white/10 cursor-pointer"
+                        className="text-left p-5 hover:bg-white/[0.04] transition-all group w-full"
                       >
                           <div className="flex justify-between items-start mb-4 text-left">
                             <div>
@@ -346,6 +384,7 @@ export default function Dashboard() {
                             Analyze details <iconify-icon icon="solar:arrow-right-linear"></iconify-icon>
                           </div>
                       </button>
+                      </SpotlightCard>
                   )) : (
                       Array.from({length: 5}).map((_, i) => (
                           <div key={i} className="glass-panel rounded-xl p-4 animate-pulse">
@@ -378,10 +417,14 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                   {trendingStocks.length > 0 ? trendingStocks.map((stock) => (
+                      <SpotlightCard
+                        key={stock.symbol}
+                        className="rounded-xl glass-panel border border-transparent hover:border-white/10 cursor-pointer"
+                        spotlightColor={stock.change_pct >= 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)'}
+                      >
                       <div 
-                        key={stock.symbol} 
                         onClick={() => openStockModal(stock.symbol, stock)}
-                        className="glass-panel rounded-xl p-4 hover:bg-white/[0.04] transition-all cursor-pointer group border border-transparent hover:border-white/10"
+                        className="p-4 hover:bg-white/[0.04] transition-all group"
                       >
                           <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-semibold text-white tracking-tight">{stock.symbol}</span>
@@ -394,6 +437,7 @@ export default function Dashboard() {
                               {stock.change >= 0 ? '+' : ''}{stock.change?.toFixed(2)}
                           </div>
                       </div>
+                      </SpotlightCard>
                   )) : (
                       Array.from({length: 5}).map((_, i) => (
                           <div key={i} className="glass-panel rounded-xl p-4 animate-pulse">
@@ -451,26 +495,71 @@ export default function Dashboard() {
           </div>
       </section>
 
-      {/* Stats Section */}
+      {/* Powered By LogoLoop Section */}
+      <section className="border-b border-white/5 py-12 overflow-hidden bg-black flex justify-center flex-col items-center">
+        <h3 className="text-white/40 text-sm font-medium mb-8 tracking-widest uppercase cursor-target">Trusted By The Fintech Ecosystem</h3>
+        <div style={{ height: '80px', width: '100%', position: 'relative' }} className="cursor-target">
+            <LogoLoop
+                logos={[
+                    { title: "NSE",        node: <span className="text-2xl font-bold text-white/70">NSE</span>,          href: "#" },
+                    { title: "BSE",        node: <span className="text-2xl font-bold text-white/70">BSE</span>,          href: "#" },
+                    { title: "SEBI",       node: <span className="text-2xl font-bold text-white/70">SEBI</span>,         href: "#" },
+                    { title: "RBI",        node: <span className="text-2xl font-bold text-white/70">RBI</span>,          href: "#" },
+                    { title: "Zerodha",    node: <span className="text-2xl font-bold text-white/70">Zerodha</span>,      href: "#" },
+                    { title: "Upstox",     node: <span className="text-2xl font-bold text-white/70">Upstox</span>,       href: "#" },
+                    { title: "Angel One",  node: <span className="text-2xl font-bold text-white/70">Angel One</span>,   href: "#" },
+                    { title: "HDFC Bank",  node: <span className="text-2xl font-bold text-white/70">HDFC&nbsp;Bank</span>, href: "#" },
+                    { title: "ICICI",      node: <span className="text-2xl font-bold text-white/70">ICICI</span>,        href: "#" },
+                    { title: "Nifty 50",   node: <span className="text-2xl font-bold text-white/70">Nifty&nbsp;50</span>, href: "#" },
+                    { title: "Bloomberg",  node: <span className="text-2xl font-bold text-white/70">Bloomberg</span>,   href: "#" },
+                    { title: "Reuters",    node: <span className="text-2xl font-bold text-white/70">Reuters</span>,     href: "#" },
+                ]}
+                speed={40}
+                direction="left"
+                logoHeight={40}
+                gap={60}
+                hoverSpeed={0}
+                scaleOnHover
+                fadeOut
+                fadeOutColor="#000000"
+                ariaLabel="Fintech partners"
+            />
+        </div>
+      </section>
+
+      {/* Stats Section with CountUp */}
       <section id="sectors" className="border-b border-white/5 bg-white/[0.02]">
           <div className="max-w-7xl mx-auto px-6 py-12">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                  <div>
-                      <div className="text-3xl font-medium tracking-tight text-white mb-1">Instant</div>
+                  <SpotlightCard className="rounded-xl p-4" spotlightColor="rgba(79, 143, 255, 0.08)">
+                      <div className="text-3xl font-medium tracking-tight text-white mb-1 flex items-baseline gap-1">
+                        <span className="text-blue-400">&lt;</span>
+                        <CountUp to={3} duration={2} className="text-3xl font-medium tracking-tight text-white" />
+                        <span className="text-blue-400">s</span>
+                      </div>
                       <div className="text-xs text-white/40">Lightning Fast Reports</div>
-                  </div>
-                  <div>
-                      <div className="text-3xl font-medium tracking-tight text-white mb-1">Reliable</div>
-                      <div className="text-xs text-white/40">Multiple Data Sources</div>
-                  </div>
-                  <div className="">
-                      <div className="text-3xl font-medium tracking-tight text-white mb-1">Smart</div>
-                      <div className="text-xs text-white/40">AI-Powered Analysis</div>
-                  </div>
-                  <div>
-                      <div className="text-3xl font-medium tracking-tight text-white mb-1">Accurate</div>
-                      <div className="text-xs text-white/40">Data Backed Insights</div>
-                  </div>
+                  </SpotlightCard>
+                  <SpotlightCard className="rounded-xl p-4" spotlightColor="rgba(167, 139, 250, 0.08)">
+                      <div className="text-3xl font-medium tracking-tight text-white mb-1 flex items-baseline gap-1">
+                        <CountUp to={5} duration={2} className="text-3xl font-medium tracking-tight text-white" />
+                        <span className="text-purple-400">+</span>
+                      </div>
+                      <div className="text-xs text-white/40">Live Data Sources</div>
+                  </SpotlightCard>
+                  <SpotlightCard className="rounded-xl p-4" spotlightColor="rgba(52, 211, 153, 0.08)">
+                      <div className="text-3xl font-medium tracking-tight text-white mb-1 flex items-baseline gap-1">
+                        <CountUp to={99} duration={2.5} className="text-3xl font-medium tracking-tight text-white" />
+                        <span className="text-emerald-400">%</span>
+                      </div>
+                      <div className="text-xs text-white/40">AI-Powered Accuracy</div>
+                  </SpotlightCard>
+                  <SpotlightCard className="rounded-xl p-4" spotlightColor="rgba(251, 191, 36, 0.08)">
+                      <div className="text-3xl font-medium tracking-tight text-white mb-1 flex items-baseline gap-1">
+                        <CountUp to={24} duration={2} className="text-3xl font-medium tracking-tight text-white" />
+                        <span className="text-amber-400">/7</span>
+                      </div>
+                      <div className="text-xs text-white/40">Always-On Monitoring</div>
+                  </SpotlightCard>
               </div>
           </div>
       </section>
@@ -490,15 +579,23 @@ export default function Dashboard() {
             />
 
             <div className="flex flex-col sm:flex-row gap-3 mt-4 relative z-10">
-              <button onClick={runAnalysis} disabled={loading || !query.trim()}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-black text-sm font-medium hover:bg-gray-200 transition-all shadow-lg active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed">
+              <StarBorder
+                as="button"
+                onClick={runAnalysis}
+                disabled={loading || !query.trim()}
+                color="#4f8fff"
+                speed="4s"
+                className={`flex-1 ${loading || !query.trim() ? 'opacity-30 cursor-not-allowed' : 'active:scale-95'}`}
+              >
+                <span className="flex items-center justify-center gap-2">
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
                     Processing Intelligence...
                   </span>
                 ) : (<><iconify-icon icon="solar:stars-minimalistic-bold" width="18"></iconify-icon> Start Analysis</>)}
-              </button>
+                </span>
+              </StarBorder>
               <button onClick={() => setQuery('')}
                 className="px-6 py-3 rounded-xl border border-white/10 text-white/40 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
                 Clear
@@ -733,7 +830,6 @@ export default function Dashboard() {
             </div>
         </div>
       </footer>
-
       {/* Detail Modal */}
       <DetailModal 
         isOpen={modalOpen} 
