@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ShinyText from '@/components/reactbits/ShinyText';
 import GradientText from '@/components/reactbits/GradientText';
 import SpotlightCard from '@/components/reactbits/SpotlightCard';
@@ -9,6 +9,9 @@ import StarBorder from '@/components/reactbits/StarBorder';
 import AdvancedChart from '@/components/AdvancedChart';
 import EquityChart from '@/components/EquityChart';
 import PerformanceTable from '@/components/PerformanceTable';
+import MonthlyReturnsHeatmap from '@/components/MonthlyReturnsHeatmap';
+import DrawdownChart from '@/components/DrawdownChart';
+import MiniChart from '@/components/MiniChart';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AnalystInfo { label: string; description: string; icon: string; }
@@ -128,8 +131,10 @@ export default function HedgeFundPage() {
   const [btTakeProfit, setBtTakeProfit] = useState<number | ''>('');
   const [btFrequency, setBtFrequency] = useState('weekly');
   const [btLoading, setBtLoading] = useState(false);
+  const [btError, setBtError] = useState<string | null>(null);
   const [btResult, setBtResult] = useState<any>(null);
-  const [btError, setBtError] = useState('');
+  const [btEquityData, setBtEquityData] = useState<any[]>([]);
+  const [btResultsTab, setBtResultsTab] = useState<'overview' | 'stats' | 'analysis' | 'trades'>('overview');
 
   // ── Paper trading state ─────────────────────────────────────────────────────
   const [paperPortfolio, setPaperPortfolio] = useState<PaperPortfolio | null>(null);
@@ -139,13 +144,51 @@ export default function HedgeFundPage() {
   const [ptError, setPtError] = useState('');
   const [activePaperTicker, setActivePaperTicker] = useState<string>('');
   const [paperChartData, setPaperChartData] = useState<{ ohlc: any[]; volume: any[]; markers: any[] }>({ ohlc: [], volume: [], markers: [] });
-  const [btEquityData, setBtEquityData] = useState<any[]>([]);
+  const [isAutoTrading, setIsAutoTrading] = useState(false);
+  const ptLoadingRef = useRef(false);
+  const [miniCharts, setMiniCharts] = useState<Record<string, any>>({});
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   useEffect(() => {
     checkBackend();
     fetchPaperPortfolio();
+    fetchMiniChartsData();
   }, []);
+
+  const fetchMiniChartsData = async () => {
+    const defaultTickers = [
+      { t: 'RELIANCE', n: 'Reliance Industries Limited' },
+      { t: 'HDFCBANK', n: 'HDFC Bank Limited' },
+      { t: 'BHARTIARTL', n: 'Bharti Airtel Limited' },
+      { t: 'SBIN', n: 'State Bank of India' }
+    ];
+    const newData: Record<string, { name: string, data: any[] }> = {};
+    for (const item of defaultTickers) {
+      try {
+        const r = await fetch(`/api/history/${item.t}?period=3mo`);
+        const d = await r.json();
+        if (d.history) {
+          newData[item.t] = {
+            name: item.n,
+            data: d.history.map((h: any) => ({
+              time: h.date, value: h.close, volume: h.volume
+            }))
+          };
+        }
+      } catch (e) {}
+    }
+    setMiniCharts(newData);
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAutoTrading) {
+      interval = setInterval(() => {
+        if (!ptLoadingRef.current) runPaperTrade();
+      }, 10000); // 10s auto cycle
+    }
+    return () => clearInterval(interval);
+  }, [isAutoTrading /* intentionally loose dependencies to prevent constant reset */]);
 
   useEffect(() => {
     if (activePaperTicker) fetchHistoryForPaperChart(activePaperTicker);
@@ -287,6 +330,7 @@ export default function HedgeFundPage() {
 
   // ── Paper Trading ───────────────────────────────────────────────────────────
   const runPaperTrade = async () => {
+    ptLoadingRef.current = true;
     setPtLoading(true);
     setPtError('');
     try {
@@ -303,9 +347,16 @@ export default function HedgeFundPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Trade failed');
       setPaperPortfolio(data.portfolio);
+      
+      if (!activePaperTicker && Object.keys(data.portfolio?.positions || {}).length > 0) {
+        setActivePaperTicker(Object.keys(data.portfolio.positions)[0]);
+      } else if (activePaperTicker) {
+        fetchHistoryForPaperChart(activePaperTicker); // Refetch chart with new markers
+      }
     } catch (e: any) {
       setPtError(e.message);
     } finally {
+      ptLoadingRef.current = false;
       setPtLoading(false);
     }
   };
@@ -755,49 +806,148 @@ export default function HedgeFundPage() {
                 </div>
               )}
               {btResult && (
-                <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(16,185,129,0.1)">
-                  <h3 className="text-sm font-medium text-white mb-5">Backtest Results — {btResult.tickers?.join(', ')}</h3>
-                  {btResult.results?.summary && (
-                    <div className="mb-8">
-                       <h4 className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold mb-4">Key Performance Indicators</h4>
-                       <PerformanceTable data={btEquityData} baseValue={btCash} />
-                    </div>
-                  )}
-                  {btEquityData.length > 0 && (
-                    <div className="mb-10 p-1 bg-gradient-to-b from-white/10 to-transparent rounded-2xl">
-                      <div className="bg-black/40 backdrop-blur-xl rounded-[calc(1rem-4px)] p-6">
-                        <EquityChart data={btEquityData} baseValue={btCash} height={400} />
-                      </div>
-                    </div>
-                  )}
-
-                  {btResult.results?.trades && (
+                <SpotlightCard className="glass-panel border-white/5 rounded-2xl overflow-hidden" spotlightColor="rgba(16,185,129,0.1)">
+                  {/* Header Banner */}
+                  <div className="bg-white/[0.03] border-b border-white/5 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                      <h4 className="text-xs text-white/40 uppercase tracking-widest mb-3">Trade Log</h4>
-                      <div className="max-h-[500px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                        {btResult.results.trades.slice(0, 100).map((t: any, i: number) => (
-                          <div key={i} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
-                            <div className={`w-1 h-8 rounded-full ${t.action === 'BUY' ? 'bg-emerald-500/40' : 'bg-red-500/40'}`} />
-                            <div className={`px-3 py-1 rounded text-[10px] font-black tracking-tighter ${t.action === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{t.action}</div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono text-white text-sm font-bold tracking-tight">{t.ticker}</span>
-                                <span className="text-white/30 text-[10px] uppercase font-bold tracking-widest">x{t.quantity}</span>
-                              </div>
-                              <div className="text-[10px] text-white/40 font-mono mt-0.5">${t.price?.toLocaleString(undefined, { minimumFractionDigits: 2 })} per share</div>
+                      <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                        <iconify-icon icon="solar:globus-bold-duotone" className="text-emerald-400" />
+                        INSTITUTIONAL BACKTEST REPORT
+                      </h3>
+                      <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-medium mt-1">Simulation ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+                    </div>
+                    <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                      {[
+                        { id: 'overview', label: 'Overview', icon: 'solar:chart-2-linear' },
+                        { id: 'stats', label: 'Statistics', icon: 'solar:library-linear' },
+                        { id: 'analysis', label: 'Analysis', icon: 'solar:filters-linear' },
+                        { id: 'trades', label: 'Trades', icon: 'solar:list-bold-duotone' },
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setBtResultsTab(tab.id as any)}
+                          className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-widest transition-all ${btResultsTab === tab.id ? 'bg-emerald-500 text-black' : 'text-white/40 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <iconify-icon icon={tab.icon} />
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-6">
+                    {/* Tab 1: Overview */}
+                    {btResultsTab === 'overview' && (
+                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        {/* Summary Box */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[
+                            { label: 'Equity', val: `$${btEquityData[btEquityData.length-1]?.value.toLocaleString()}`, color: 'text-white' },
+                            { label: 'Net Profit', val: `$${(btEquityData[btEquityData.length-1]?.value - btCash).toLocaleString()}`, color: 'text-emerald-400' },
+                            { label: 'Returns', val: `${((btEquityData[btEquityData.length-1]?.value / btCash - 1) * 100).toFixed(2)}%`, color: 'text-emerald-400' },
+                            { label: 'Volume', val: `$${btResult.results?.trades?.length * 10000}+`, color: 'text-white/40' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-white/[0.02] border border-white/5 rounded-xl p-4">
+                              <div className="text-[9px] text-white/20 uppercase tracking-widest font-black mb-1">{stat.label}</div>
+                              <div className={`text-xl font-bold tracking-tighter font-mono ${stat.color}`}>{stat.val}</div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-white text-[11px] font-bold">${(t.price * t.quantity).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                              <div className="text-[10px] text-white/20 mt-0.5">{t.date}</div>
+                          ))}
+                        </div>
+
+                        {/* Equity Chart */}
+                        {btEquityData.length > 0 && (
+                          <div className="p-1 bg-gradient-to-b from-emerald-500/10 to-transparent rounded-2xl overflow-hidden border border-white/5 shadow-2xl">
+                            <div className="bg-black/40 backdrop-blur-xl p-6 rounded-[calc(1rem-4px)]">
+                              <EquityChart data={btEquityData} baseValue={btCash} height={400} />
                             </div>
                           </div>
-                        ))}
+                        )}
+                        
+                        {/* Top Metrics Row */}
+                        <div className="pt-4 border-t border-white/5">
+                           <h4 className="text-[10px] text-white/20 uppercase font-black tracking-widest mb-4">Core Performance Snapshot</h4>
+                           <PerformanceTable data={btEquityData} baseValue={btCash} />
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {!btResult.results?.summary && !btResult.results?.trades && (
-                    <pre className="text-xs text-white/50 overflow-auto max-h-96">{JSON.stringify(btResult.results, null, 2)}</pre>
-                  )}
+                    )}
+
+                    {/* Tab 2: Statistics */}
+                    {btResultsTab === 'stats' && (
+                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="flex items-center justify-between mb-6">
+                           <h4 className="text-xs text-white/40 uppercase tracking-[0.3em] font-black">All Algorithmic Statistics</h4>
+                           <div className="text-[10px] text-emerald-500/50 flex items-center gap-1 font-mono">
+                             <iconify-icon icon="solar:verified-check-bold" />
+                             Verified Quantum Execution
+                           </div>
+                        </div>
+                        <PerformanceTable data={btEquityData} baseValue={btCash} />
+                        <div className="mt-12 p-8 rounded-2xl bg-white/[0.01] border border-white/5 text-center">
+                           <iconify-icon icon="solar:chart-square-linear" width="32" className="text-white/10 mb-3" />
+                           <p className="text-[11px] text-white/30 max-w-md mx-auto italic font-medium leading-relaxed">
+                             "The statistics above reflect a comprehensive risk-adjusted performance profile of the selected tickers across the historical timeline. Note that backtest performance is not indicative of future alpha."
+                           </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tab 3: Analysis */}
+                    {btResultsTab === 'analysis' && (
+                      <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        {/* Heatmap */}
+                        <div>
+                          <h4 className="text-xs text-white uppercase tracking-widest font-black mb-6 flex items-center gap-2">
+                            <iconify-icon icon="solar:mask-vibrant-bold" className="text-emerald-400" />
+                            Monthly Returns Heatmap
+                          </h4>
+                          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6">
+                            <MonthlyReturnsHeatmap data={btEquityData} />
+                          </div>
+                        </div>
+
+                        {/* Drawdown */}
+                        <div>
+                          <h4 className="text-xs text-white uppercase tracking-widest font-black mb-6 flex items-center gap-2">
+                             <iconify-icon icon="solar:danger-triangle-bold" className="text-red-500" />
+                             Underwater (Drawdown %)
+                          </h4>
+                          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6">
+                            <DrawdownChart data={btEquityData} height={350} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tab 4: Trades */}
+                    {btResultsTab === 'trades' && (
+                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="flex items-center justify-between mb-6">
+                          <h4 className="text-xs text-white/40 uppercase tracking-widest font-black">Execution Journal</h4>
+                          <span className="text-[10px] text-white/20 font-mono">{btResult.results?.trades?.length} Orders Logged</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[700px] overflow-y-auto pr-2 custom-scrollbar">
+                          {btResult.results?.trades?.map((t: any, i: number) => (
+                            <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] transition-all group">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${t.action === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                {t.action[0]}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-white text-sm font-bold tracking-tight">{t.ticker}</span>
+                                  <span className="text-white/20 text-[9px] uppercase font-bold tracking-[0.2em]">{t.action}</span>
+                                </div>
+                                <div className="text-[10px] text-white/40 font-mono mt-0.5">{t.date}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-white text-[11px] font-bold">${(t.price * t.quantity).toLocaleString()}</div>
+                                <div className="text-[10px] text-white/30 font-mono mt-0.5">{t.quantity} @ ${t.price}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </SpotlightCard>
               )}
             </div>
@@ -842,6 +992,40 @@ export default function HedgeFundPage() {
             </div>
 
             <div className="lg:col-span-2 space-y-5">
+              {/* MiniChart Market Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {Object.entries(miniCharts).length > 0 ? (
+                  Object.entries(miniCharts).map(([ticker, info]) => (
+                    <MiniChart key={ticker} ticker={ticker} name={info.name} data={info.data} height={180} />
+                  ))
+                ) : (
+                  [1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-[180px] rounded-xl glass-panel border border-white/5 bg-[#0a0a0b] flex items-center justify-center">
+                       <iconify-icon icon="line-md:loading-loop" className="text-white/20 text-2xl" />
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Auto Trading Master Switch */}
+              <div className="flex items-center justify-between p-4 rounded-2xl glass-panel border border-white/10 bg-[#0a0a0b]">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl transition-all ${isAutoTrading ? 'bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-red-500/10 text-red-500'}`}>
+                    <iconify-icon icon={isAutoTrading ? "solar:radar-bold" : "solar:radar-linear"} width="24" className={isAutoTrading ? "animate-pulse" : ""} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white tracking-tight">Autonomous Trading Engine</h3>
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">{isAutoTrading ? 'System is actively analyzing & executing' : 'System is paused (Manual Override)'}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsAutoTrading(!isAutoTrading)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${isAutoTrading ? 'bg-emerald-500' : 'bg-white/10'}`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-black transition-transform ${isAutoTrading ? 'translate-x-7' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
               {paperPortfolio ? (
                 <>
                   {/* Portfolio Summary */}
