@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import './GooeyNav.css';
 
 interface GooeyNavItem {
@@ -29,11 +30,18 @@ const GooeyNav = ({
   colors = [1, 2, 3, 1, 2, 3, 1, 4],
   initialActiveIndex = 0,
 }: GooeyNavProps) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLUListElement>(null);
   const filterRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
-  const [activeIndex, setActiveIndex] = useState(initialActiveIndex);
+
+  // Sync activeIndex with current pathname
+  const [activeIndex, setActiveIndex] = useState(() => {
+    const index = items.findIndex(item => item.href === pathname || (pathname === '/' && item.href === '/#markets'));
+    return index !== -1 ? index : initialActiveIndex;
+  });
 
   const noise = (n = 1) => n / 2 - Math.random() * n;
 
@@ -113,6 +121,13 @@ const GooeyNav = ({
 
   const handleClick = (e: React.MouseEvent<HTMLLIElement>, index: number) => {
     const liEl = e.currentTarget;
+    const item = items[index];
+
+    // Trigger navigation
+    if (item.href) {
+      router.push(item.href);
+    }
+
     if (activeIndex === index) return;
 
     setActiveIndex(index);
@@ -139,23 +154,18 @@ const GooeyNav = ({
       e.preventDefault();
       const liEl = e.currentTarget.parentElement;
       if (liEl) {
-        updateEffectPosition(liEl);
-        if (activeIndex !== index) {
-          setActiveIndex(index);
-          if (filterRef.current) {
-            const particles = filterRef.current.querySelectorAll('.particle');
-            particles.forEach((p) => filterRef.current!.removeChild(p));
-            makeParticles(filterRef.current);
-          }
-          if (textRef.current) {
-            textRef.current.classList.remove('active');
-            void textRef.current.offsetWidth;
-            textRef.current.classList.add('active');
-          }
-        }
+        handleClick({ currentTarget: liEl } as any, index);
       }
     }
   };
+
+  // Sync index on pathname change (for external navigation)
+  useEffect(() => {
+    const index = items.findIndex(item => item.href === pathname || (pathname === '/' && item.href === '/#markets'));
+    if (index !== -1 && index !== activeIndex) {
+      setActiveIndex(index);
+    }
+  }, [pathname, items, activeIndex]);
 
   useEffect(() => {
     if (!navRef.current || !containerRef.current) return;
@@ -190,7 +200,7 @@ const GooeyNav = ({
               <a
                 href={item.href}
                 onKeyDown={(e) => handleKeyDown(e, index)}
-                onClick={(e) => e.preventDefault()}
+                onClick={(e) => e.preventDefault()} // Keep preventDefault to avoid page reload, router.push handles it
               >
                 {item.label}
               </a>
@@ -205,3 +215,4 @@ const GooeyNav = ({
 };
 
 export default GooeyNav;
+
