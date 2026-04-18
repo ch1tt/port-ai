@@ -147,12 +147,21 @@ export default function HedgeFundPage() {
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const ptLoadingRef = useRef(false);
   const [miniCharts, setMiniCharts] = useState<Record<string, any>>({});
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+
+  const addLog = (msg: string) => {
+    setTerminalLogs(prev => [
+      `[${new Date().toLocaleTimeString('en-GB')}] ${msg}`,
+      ...prev.slice(0, 49)
+    ]);
+  };
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   useEffect(() => {
     checkBackend();
     fetchPaperPortfolio();
     fetchMiniChartsData();
+    addLog("System Initialized. Await Signal.");
   }, []);
 
   const fetchMiniChartsData = async () => {
@@ -1282,6 +1291,38 @@ export default function HedgeFundPage() {
             </SpotlightCard>
           </div>
         )}
+      </div>
+
+      {/* Global Activity Terminal (Bottom Bar) */}
+      <div className="fixed bottom-0 left-0 right-0 z-[60] bg-[#0a0a0b]/90 backdrop-blur-xl border-t border-white/5 h-10 flex items-center px-6 overflow-hidden select-none">
+          <div className="flex items-center gap-4 border-r border-white/10 pr-4 mr-4">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              <span className="text-[10px] text-white/50 font-black uppercase tracking-widest whitespace-nowrap">System Active</span>
+          </div>
+          <div className="flex-1 relative overflow-hidden h-full flex items-center">
+              <div className="animate-marquee-slow flex whitespace-nowrap gap-12 items-center">
+                  {terminalLogs.length > 0 ? (
+                      terminalLogs.map((log, i) => (
+                        <span key={i} className="text-[10px] font-mono text-white/40 group cursor-default">
+                           <span className="text-emerald-500/40">{log.split(' ')[0]}</span>
+                           <span className="ml-2 group-hover:text-white transition-colors">{log.split(' ').slice(1).join(' ')}</span>
+                        </span>
+                      ))
+                  ) : (
+                      <span className="text-[10px] font-mono text-white/20">Awaiting Signal Matrix Initialization...</span>
+                  )}
+              </div>
+          </div>
+          <div className="flex items-center gap-6 border-l border-white/10 pl-4 ml-4">
+              <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-white/30 uppercase tracking-tighter">Latency:</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">14ms</span>
+              </div>
+              <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-white/30 uppercase tracking-tighter">Load:</span>
+                  <span className="text-[10px] text-amber-400 font-mono">2.4%</span>
+              </div>
+          </div>
       </div>
     </main>
   );
