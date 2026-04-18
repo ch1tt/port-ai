@@ -51,6 +51,8 @@ export default function Header() {
               { label: 'Portfolios', href: '/portfolios' },
               { label: 'Intelligence', href: '/intelligence' },
               { label: 'Sectors', href: '/sectors' },
+              { label: 'Workflow', href: '/workflow' },
+              { label: 'Hedge Fund', href: '/hedge-fund' },
             ]}
             particleCount={12}
             particleDistances={[80, 8]}

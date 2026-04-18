@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -33,6 +34,9 @@ export default function AuthPage() {
           password,
           options: {
             emailRedirectTo: window.location.origin,
+            data: {
+              phone_number: phone, // Store phone in user_metadata
+            },
           },
         });
         if (error) throw error;
@@ -43,6 +47,13 @@ export default function AuthPage() {
           password,
         });
         if (error) throw error;
+
+        // If user logs in and has a phone number entered, update metadata
+        if (phone) {
+          await supabase.auth.updateUser({
+            data: { phone_number: phone },
+          });
+        }
       }
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
@@ -105,6 +116,26 @@ export default function AuthPage() {
                   required
                 />
               </div>
+            </div>
+
+            {/* Phone Number Field */}
+            <div>
+              <label className="block text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1.5 ml-1">
+                WhatsApp Number <span className="text-white/15">(for report delivery)</span>
+              </label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/20 group-focus-within:text-emerald-400 transition-colors">
+                  <iconify-icon icon="solar:phone-linear" width="18"></iconify-icon>
+                </div>
+                <input
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 transition-all text-sm"
+                />
+              </div>
+              <p className="text-[9px] text-white/20 mt-1 ml-1">Include country code. Reports will be sent via WhatsApp & email.</p>
             </div>
 
             <div>
