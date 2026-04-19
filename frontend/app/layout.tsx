@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 import Header from '@/components/Header'
 import { AuthProvider } from '@/context/AuthContext'
 import AuthLanyardBadge from '@/components/AuthLanyardBadge'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
         {/* UnicornStudio Script */}
         <script src="https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v1.4.34/dist/unicornStudio.umd.js" async={true}></script>
+        {/* Google Translate — hidden widget, driven by LanguageSwitcher */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          function googleTranslateElementInit() {
+            try {
+              new google.translate.TranslateElement({
+                pageLanguage: 'en',
+                includedLanguages: 'en,hi,bn,te,mr,ta,gu,kn,ml,pa,zh-CN,ja,ko,ar,es,fr,de,pt,ru',
+                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false
+              }, 'gt_root');
+            } catch(e) { console.warn('GT init failed', e); }
+          }
+        `}} />
+        <script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+        {/* Suppress Google Translate's own UI — we use our custom switcher */}
+        <style>{`
+          #gt_root { position: absolute; overflow: hidden; height: 1px; width: 1px; top: -1px; left: -1px; }
+          .goog-te-banner-frame { display: none !important; }
+          .goog-te-balloon-frame { display: none !important; }
+          body { top: 0px !important; }
+        `}</style>
       </head>
       <body className="antialiased selection:bg-white/20 selection:text-white pb-20 bg-black">
         {/* Background Component - Optimized by removing expensive filters */}
@@ -30,11 +52,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="absolute inset-0 bg-blue-500/5 mix-blend-overlay pointer-events-none"></div>
         </div>
 
+        {/* Google Translate mount point — kept in flow but visually invisible via CSS above */}
+        <div id="gt_root" />
+
         <AuthProvider>
           <Header />
           {children}
           {/* Mini lanyard badge — only shown when user is logged in */}
           <AuthLanyardBadge />
+          {/* Floating language switcher — bottom-right on mobile, visible everywhere */}
+          <div className="fixed bottom-14 right-4 z-[70] lg:hidden">
+            <LanguageSwitcher />
+          </div>
         </AuthProvider>
         
         {/* Init UnicornStudio wrapper script */}

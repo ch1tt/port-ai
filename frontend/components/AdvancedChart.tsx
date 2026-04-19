@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
 
 interface OHLCData {
   time: string;
@@ -31,7 +31,11 @@ interface AdvancedChartProps {
   markers?: TradeMarker[];
   height?: number;
   ticker?: string;
+  live?: boolean;
+  pollIntervalMs?: number;
 }
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ── Technical Calcs ──────────────────────────────────────────────────────────
 function calculateSMA(data: any[], period: number) {
@@ -115,9 +119,12 @@ function calculateRSI(data: OHLCData[], period: number = 14) {
   return rsiData;
 }
 
-export default function AdvancedChart({ data, volumeData, markers, height = 500, ticker = "STOCK" }: AdvancedChartProps) {
+export default function AdvancedChart({ data, volumeData, markers, height = 500, ticker = "STOCK", live = false, pollIntervalMs = 8000 }: AdvancedChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [legendData, setLegendData] = useState<any>({});
+  const [livePulse, setLivePulse] = useState(false);
+  const candleSeriesRef = useRef<any>(null);
+  const volSeriesRef = useRef<any>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current || !data.length) return;
@@ -147,6 +154,7 @@ export default function AdvancedChart({ data, volumeData, markers, height = 500,
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#10B981', downColor: '#EF4444', borderVisible: false, wickUpColor: '#10B981', wickDownColor: '#EF4444',
     });
+    candleSeriesRef.current = candlestickSeries;
     const sortedData = [...data].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
     candlestickSeries.setData(sortedData);
 
@@ -159,6 +167,7 @@ export default function AdvancedChart({ data, volumeData, markers, height = 500,
 
     // ── Volume ───────────────────────────────────────────────────────────────
     const volumeSeries = chart.addSeries(HistogramSeries, { color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '' });
+    volSeriesRef.current = volumeSeries;
     if (volumeData?.length) {
       volumeSeries.setData([...volumeData].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
     } else {
@@ -182,7 +191,7 @@ export default function AdvancedChart({ data, volumeData, markers, height = 500,
     chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.85, bottom: 0.05 }, borderColor: 'rgba(255, 255, 255, 0.05)' });
 
     // ── Markers ─────────────────────────────────────────────────────────────
-    if (markers?.length) candlestickSeries.setMarkers([...markers].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
+    if (markers?.length) createSeriesMarkers(candlestickSeries, [...markers].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
 
     // ── RSI ────────────────────────────────────────────────────────────────
     const rsiSeries = chart.addSeries(LineSeries, { color: '#A78BFA', lineWidth: 1, priceScaleId: 'rsi', lastValueVisible: false });
@@ -210,16 +219,77 @@ export default function AdvancedChart({ data, volumeData, markers, height = 500,
     const handleResize = () => chart.applyOptions({ width: chartContainerRef.current!.clientWidth });
     window.addEventListener('resize', handleResize);
     chart.timeScale().fitContent();
-    return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+      candleSeriesRef.current = null;
+      volSeriesRef.current = null;
+    };
   }, [data, volumeData, markers, height]);
+
+  // Live polling
+  useEffect(() => {
+    if (!live || !ticker) return;
+
+    const fetchLive = async () => {
+      try {
+        const r = await fetch(`${API}/api/price/${ticker}`);
+        const d = await r.json();
+        if (d.error || !d.price) return;
+
+        setLivePulse(true);
+        setTimeout(() => setLivePulse(false), 500);
+
+        if (candleSeriesRef.current) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const ts = Math.floor(today.getTime() / 1000) as any;
+          candleSeriesRef.current.update({
+            time: ts,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.price,
+          });
+        }
+        if (volSeriesRef.current) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const ts = Math.floor(today.getTime() / 1000) as any;
+          volSeriesRef.current.update({
+            time: ts,
+            value: d.volume,
+            color: d.price >= d.open ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+          });
+        }
+        setLegendData((prev: any) => ({
+          ...prev,
+          open: d.open, high: d.high, low: d.low, close: d.price,
+          volume: d.volume,
+          color: d.price >= d.open ? 'text-emerald-400' : 'text-red-400',
+        }));
+      } catch {}
+    };
+
+    fetchLive();
+    const id = setInterval(fetchLive, pollIntervalMs);
+    return () => clearInterval(id);
+  }, [live, ticker, pollIntervalMs]);
 
   return (
     <div className="flex flex-col w-full h-full relative group bg-[#0a0a0b] rounded-xl overflow-hidden border border-white/5">
       {/* HUD Legend */}
       <div className="absolute top-4 left-4 z-20 pointer-events-none flex flex-col gap-1">
         <div className="flex items-center gap-3">
-          <div className="bg-emerald-500 rounded px-1.5 py-0.5 text-[10px] text-black font-black uppercase tracking-tighter">LIVE</div>
-          <span className="text-white font-bold text-base tracking-tight">{ticker} / USD</span>
+          {live ? (
+            <div className={`flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/40 rounded px-1.5 py-0.5 text-[10px] text-emerald-400 font-black uppercase tracking-tighter transition-all ${livePulse ? 'scale-110 bg-emerald-500/30' : ''}`}>
+              <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 ${livePulse ? 'animate-ping' : 'animate-pulse'}`} />
+              LIVE
+            </div>
+          ) : (
+            <div className="bg-white/10 rounded px-1.5 py-0.5 text-[10px] text-white/40 font-black uppercase tracking-tighter">HIST</div>
+          )}
+          <span className="text-white font-bold text-base tracking-tight">{ticker}</span>
         </div>
         <div className="flex gap-4 text-[11px] font-mono mt-1">
           {['open', 'high', 'low', 'close'].map(k => (

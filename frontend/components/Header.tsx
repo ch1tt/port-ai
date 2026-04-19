@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import ShinyText from './reactbits/ShinyText';
 import GooeyNav from './reactbits/GooeyNav/GooeyNav';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -51,7 +52,7 @@ export default function Header() {
               { label: 'Portfolios', href: '/portfolios' },
               { label: 'Intelligence', href: '/intelligence' },
               { label: 'Sectors', href: '/sectors' },
-              { label: 'Workflow', href: '/workflow' },
+              { label: 'Charts', href: '/technical-charts' },
               { label: 'Hedge Fund', href: '/hedge-fund' },
             ]}
             particleCount={12}
@@ -65,7 +66,8 @@ export default function Header() {
         </div>
 
         {/* Action Section */}
-        <div className="flex items-center gap-6 relative z-10">
+        <div className="flex items-center gap-3 relative z-10">
+          <LanguageSwitcher />
           <div className="hidden lg:flex items-center gap-2 text-[10px] uppercase tracking-widest bg-white/[0.03] px-4 py-2 rounded-full border border-white/10 group hover:border-emerald-500/30 transition-colors">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ticker-live shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
             <ShinyText text="AI LIVE ANALYSIS" speed={2.5} color="rgba(52,211,153,0.8)" shineColor="#ffffff" className="text-[10px] uppercase tracking-widest font-semibold" />

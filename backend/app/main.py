@@ -551,17 +551,43 @@ async def background_market_surveillance():
                 if stock in WATCHED_STOCKS and data.get("change_pct", 0) < -3.0:
                     alert_msg = f"⚠️ CRITICAL RISK: {stock} is down {data['change_pct']:.2f}%! Price: ₹{data['price']}. Take action."
                     await notify_all_channels(alert_msg)
-            
+
             # General Health Check loop
             await asyncio.sleep(300) # Check every 5 minutes
         except Exception as e:
             print(f"Surveillance Error: {e}")
             await asyncio.sleep(60)
 
+# ── News Digest State ─────────────────────────────────────────
+_digest_config = {
+    "enabled": False,
+    "interval_hours": 6,  # default: every 6 hours
+}
+
+async def background_news_digest():
+    """Sends a scheduled market news digest to Telegram."""
+    from app.services.notification_service import send_news_digest
+    # Small initial delay so startup completes first
+    await asyncio.sleep(10)
+    while True:
+        try:
+            interval_secs = _digest_config.get("interval_hours", 6) * 3600
+            if _digest_config.get("enabled", False):
+                print("Sending scheduled news digest...")
+                market_data = await fetch_indian_market()
+                news_articles = await fetch_indian_news()
+                trending = await fetch_trending_stocks()
+                await send_news_digest(market_data, news_articles, trending)
+            await asyncio.sleep(interval_secs)
+        except Exception as e:
+            print(f"News Digest Error: {e}")
+            await asyncio.sleep(3600)
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(background_market_surveillance())
-    print("Market Surveillance Engine started.")
+    asyncio.create_task(background_news_digest())
+    print("Market Surveillance + News Digest Engine started.")
 
 # ── Endpoints ─────────────────────────────────────────────────
 @app.get("/")
@@ -616,6 +642,56 @@ async def update_config(req: ConfigUpdateRequest):
 @app.get("/api/status")
 async def api_status():
     return config_status()
+
+
+# ── Notification / Digest Endpoints ───────────────────────────
+class DigestConfigRequest(BaseModel):
+    enabled: Optional[bool] = None
+    interval_hours: Optional[int] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+@app.get("/api/notifications/status")
+async def notifications_status():
+    return {
+        "digest": _digest_config,
+        "telegram_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
+    }
+
+@app.post("/api/notifications/config")
+async def update_digest_config(req: DigestConfigRequest):
+    if req.enabled is not None:
+        _digest_config["enabled"] = req.enabled
+    if req.interval_hours is not None and req.interval_hours >= 1:
+        _digest_config["interval_hours"] = req.interval_hours
+    if req.telegram_bot_token:
+        os.environ["TELEGRAM_BOT_TOKEN"] = req.telegram_bot_token
+    if req.telegram_chat_id:
+        os.environ["TELEGRAM_CHAT_ID"] = req.telegram_chat_id
+    return {
+        "digest": _digest_config,
+        "telegram_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
+    }
+
+@app.post("/api/notifications/send-digest")
+async def manual_send_digest():
+    """Manually triggers an immediate news digest to Telegram."""
+    from app.services.notification_service import send_news_digest
+    try:
+        market_data = await fetch_indian_market()
+        news_articles = await fetch_indian_news()
+        trending = await fetch_trending_stocks()
+        ok = await send_news_digest(market_data, news_articles, trending)
+        return {"success": ok, "message": "Digest sent." if ok else "Failed — check Telegram credentials."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/notifications/test")
+async def test_telegram():
+    """Sends a simple test ping to Telegram."""
+    from app.services.notification_service import send_telegram_alert
+    ok = await send_telegram_alert("✅ PortAI Telegram connection verified! Your market digests are ready.")
+    return {"success": ok, "message": "Test message sent." if ok else "Failed — verify TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID."}
 
 @app.get("/api/market")
 async def get_market_data():
@@ -797,17 +873,41 @@ async def analyze_file(file: UploadFile = File(...), query: str = Form(default="
             "market": {}, "news_used": [], "apis_used": []
         }
 
+async def resolve_symbol(symbol: str) -> str:
+    """Resolve a ticker to the correct yfinance symbol.
+    Tries the symbol as-is first (covers US stocks), then appends .NS for Indian stocks."""
+    sym = symbol.upper()
+    # Known index aliases
+    if sym in ("NIFTY50", "NIFTY 50"): return "^NSEI"
+    if sym == "SENSEX": return "^BSESN"
+    if sym in ("NIFTYBANK", "NIFTY BANK"): return "^NSEBANK"
+    # Already has exchange suffix or is an index
+    if sym.startswith("^") or sym.endswith((".NS", ".BO")):
+        return sym
+    # Try as-is (US stocks, ETFs, crypto)
+    try:
+        t = yf.Ticker(sym)
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = info.get("lastPrice") or info.get("regularMarketPrice") or 0
+        if price and float(price) > 0:
+            return sym
+    except Exception:
+        pass
+    # Fall back to NSE suffix for Indian stocks
+    return f"{sym}.NS"
+
+
+def get_currency(resolved_sym: str) -> str:
+    """Return currency code based on resolved yfinance symbol."""
+    if resolved_sym.endswith((".NS", ".BO")) or resolved_sym in ("^NSEI", "^BSESN", "^NSEBANK"):
+        return "INR"
+    return "USD"
+
+
 @app.get("/api/history/{symbol}")
 async def get_history(symbol: str, period: str = "1mo"):
     try:
-        # Handle index symbols like NIFTY 50 -> ^NSEI
-        ticker_sym = symbol
-        if symbol.upper() == "NIFTY 50": ticker_sym = "^NSEI"
-        elif symbol.upper() == "SENSEX": ticker_sym = "^BSESN"
-        elif symbol.upper() == "NIFTY BANK": ticker_sym = "^NSEBANK"
-        elif not ticker_sym.startswith("^") and not ticker_sym.endswith(".NS") and not ticker_sym.endswith(".BO"):
-            ticker_sym = f"{ticker_sym.upper()}.NS"
-
+        ticker_sym = await resolve_symbol(symbol)
         ticker = yf.Ticker(ticker_sym)
         hist = await asyncio.to_thread(lambda: ticker.history(period=period))
         if hist.empty:
@@ -823,7 +923,7 @@ async def get_history(symbol: str, period: str = "1mo"):
                 "open": round(row["Open"], 2),
                 "volume": int(row["Volume"])
             })
-        return {"symbol": symbol, "history": data}
+        return {"symbol": symbol, "history": data, "currency": get_currency(ticker_sym)}
     except Exception as e:
         print(f"History fetch error for {symbol}: {e}")
         return {"error": str(e), "symbol": symbol}
@@ -839,6 +939,48 @@ async def get_stock(symbol: str):
         fb.setdefault("symbol", sym)
         return fb
     return {"error": "Fetch failed", "symbol": symbol}
+
+@app.get("/api/price/{symbol}")
+async def get_live_price(symbol: str):
+    """Fast current price endpoint for live chart updates."""
+    try:
+        sym = await resolve_symbol(symbol)
+        t = yf.Ticker(sym)
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        price = round(info.get("lastPrice") or info.get("regularMarketPrice") or 0, 2)
+        prev  = round(info.get("previousClose") or price, 2)
+        open_ = round(info.get("open") or price, 2)
+        high  = round(info.get("dayHigh") or price, 2)
+        low   = round(info.get("dayLow") or price, 2)
+        vol   = int(info.get("lastVolume") or 0)
+        change_pct = round(((price - prev) / prev) * 100, 2) if prev else 0
+
+        from datetime import datetime
+        ts = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+        return {
+            "symbol": symbol.upper(),
+            "price": price, "open": open_, "high": high, "low": low,
+            "prev_close": prev, "change_pct": change_pct, "volume": vol,
+            "timestamp": ts,
+            "currency": get_currency(sym),
+        }
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol}
+
+@app.get("/api/forex/usd-inr")
+async def get_usd_inr_rate():
+    """Returns live USD/INR exchange rate via yfinance."""
+    try:
+        t = yf.Ticker("USDINR=X")
+        info = await asyncio.to_thread(lambda: t.fast_info)
+        rate = info.get("lastPrice") or info.get("regularMarketPrice") or 0
+        if not rate or float(rate) < 50:
+            raise ValueError("Bad rate")
+        return {"rate": round(float(rate), 4), "pair": "USD/INR"}
+    except Exception:
+        # Fallback to a recent approximate rate
+        return {"rate": 83.50, "pair": "USD/INR", "fallback": True}
 
 @app.post("/api/test-notification")
 async def test_notification(req: dict):
@@ -952,23 +1094,27 @@ STRATTON_PROVIDERS = {
 
 @app.get("/api/analysts")
 @app.get("/api/stratton/analysts")
+@app.get("/api/hedge-fund/analysts")
 async def stratton_get_analysts():
     return {"analysts": STRATTON_ANALYSTS}
 
 
 @app.get("/api/personas")
 @app.get("/api/stratton/personas")
+@app.get("/api/hedge-fund/personas")
 async def stratton_get_personas():
     return {"personas": STRATTON_PERSONAS}
 
 
 @app.get("/api/providers")
 @app.get("/api/stratton/providers")
+@app.get("/api/hedge-fund/providers")
 async def stratton_get_providers():
     return {"providers": STRATTON_PROVIDERS}
 
 
 @app.post("/api/stratton/analyze")
+@app.post("/api/hedge-fund/analyze")
 async def stratton_analyze(req: StrattonAnalyzeRequest):
     """Run multi-agent hedge fund analysis using the HedgeFundAgents engine."""
     try:
@@ -998,28 +1144,48 @@ _paper_portfolio = {
 
 @app.get("/api/paper-portfolio")
 @app.get("/api/stratton/paper-portfolio")
+@app.get("/api/hedge-fund/paper-portfolio")
 async def stratton_get_paper_portfolio():
     return _paper_portfolio
 
 
 @app.post("/api/paper-trade")
 @app.post("/api/stratton/paper-trade")
-async def stratton_paper_trade(req: StrattonPaperTradeRequest):
-    """Run one paper trading cycle using analysis."""
+@app.post("/api/hedge-fund/paper-portfolio")
+async def stratton_paper_trade(req: Dict[str, Any]):
+    """Unified paper portfolio endpoint for trade and reset."""
     global _paper_portfolio
+    
+    # Handle Reset action
+    if req.get("_action") == "reset":
+        cash = req.get("cash", 100000)
+        _paper_portfolio = {
+            "cash": cash,
+            "total_value": cash,
+            "positions": {},
+            "trades": [],
+            "last_run": None,
+        }
+        return {"portfolio": _paper_portfolio}
+
+    # Handle Trade action (default)
     try:
+        tickers = req.get("tickers", ["AAPL", "MSFT"])
+        use_llm = req.get("use_llm", False)
+        model_name = req.get("model_name", "llama3-70b-8192")
+        
         from app.services.multi_agents import hedge_fund_engine
         result = await hedge_fund_engine.run_multi_agent_analysis(
-            tickers=req.tickers,
-            use_llm=req.use_llm,
-            model_name=req.model_name,
+            tickers=tickers,
+            use_llm=use_llm,
+            model_name=model_name,
         )
 
         portfolio_output = result.get("portfolio_output", {})
         current_prices = {}
 
         # Get current prices
-        for ticker in req.tickers:
+        for ticker in tickers:
             try:
                 t = yf.Ticker(ticker)
                 info = await asyncio.to_thread(lambda: t.fast_info)
@@ -1163,6 +1329,7 @@ async def stratton_manual_trade(req: StrattonManualTradeRequest):
 
 @app.post("/api/backtest")
 @app.post("/api/stratton/backtest")
+@app.post("/api/hedge-fund/backtest")
 async def stratton_backtest(req: StrattonBacktestRequest):
     """Run a simple historical backtest."""
     try:

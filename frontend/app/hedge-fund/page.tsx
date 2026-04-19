@@ -12,6 +12,7 @@ import PerformanceTable from '@/components/PerformanceTable';
 import MonthlyReturnsHeatmap from '@/components/MonthlyReturnsHeatmap';
 import DrawdownChart from '@/components/DrawdownChart';
 import MiniChart from '@/components/MiniChart';
+import CandleMiniChart from '@/components/CandleMiniChart';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AnalystInfo { label: string; description: string; icon: string; }
@@ -103,7 +104,7 @@ function StatusChip({ online }: { online: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function HedgeFundPage() {
-  const [activeTab, setActiveTab] = useState<'analyze' | 'backtest' | 'paper' | 'risk'>('analyze');
+  const [activeTab, setActiveTab] = useState<'analyze' | 'backtest' | 'paper' | 'risk' | 'notifications'>('analyze');
   const [backendOnline, setBackendOnline] = useState(false);
 
   // Metadata from backend
@@ -146,8 +147,86 @@ export default function HedgeFundPage() {
   const [paperChartData, setPaperChartData] = useState<{ ohlc: any[]; volume: any[]; markers: any[] }>({ ohlc: [], volume: [], markers: [] });
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const ptLoadingRef = useRef(false);
-  const [miniCharts, setMiniCharts] = useState<Record<string, any>>({});
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+
+  // ── FX rate ─────────────────────────────────────────────────────────────────
+  const [usdToInr, setUsdToInr] = useState(83.5);
+
+  // ── Notifications state ─────────────────────────────────────────────────────
+  const [tgBotToken, setTgBotToken] = useState('');
+  const [tgChatId, setTgChatId] = useState('');
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestInterval, setDigestInterval] = useState(6);
+  const [notifConfigured, setNotifConfigured] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifMsg, setNotifMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [digestSending, setDigestSending] = useState(false);
+
+  const fetchNotifStatus = async () => {
+    try {
+      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/notifications/status`);
+      const d = await r.json();
+      setNotifConfigured(d.telegram_configured);
+      setDigestEnabled(d.digest?.enabled ?? false);
+      setDigestInterval(d.digest?.interval_hours ?? 6);
+    } catch {}
+  };
+
+  const saveNotifConfig = async () => {
+    setNotifLoading(true);
+    setNotifMsg(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const r = await fetch(`${base}/api/notifications/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: digestEnabled,
+          interval_hours: digestInterval,
+          telegram_bot_token: tgBotToken || undefined,
+          telegram_chat_id: tgChatId || undefined,
+        }),
+      });
+      const d = await r.json();
+      setNotifConfigured(d.telegram_configured);
+      setNotifMsg({ text: 'Configuration saved.', ok: true });
+    } catch (e) {
+      setNotifMsg({ text: 'Failed to save config.', ok: false });
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const sendTestTelegram = async () => {
+    setNotifLoading(true);
+    setNotifMsg(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const r = await fetch(`${base}/api/notifications/test`, { method: 'POST' });
+      const d = await r.json();
+      setNotifMsg({ text: d.message, ok: d.success });
+    } catch {
+      setNotifMsg({ text: 'Request failed.', ok: false });
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const sendDigestNow = async () => {
+    setDigestSending(true);
+    setNotifMsg(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const r = await fetch(`${base}/api/notifications/send-digest`, { method: 'POST' });
+      const d = await r.json();
+      setNotifMsg({ text: d.message, ok: d.success });
+      addLog(`Telegram digest: ${d.success ? 'sent' : 'failed'}`);
+    } catch {
+      setNotifMsg({ text: 'Request failed.', ok: false });
+    } finally {
+      setDigestSending(false);
+    }
+  };
 
   const addLog = (msg: string) => {
     setTerminalLogs(prev => [
@@ -160,34 +239,12 @@ export default function HedgeFundPage() {
   useEffect(() => {
     checkBackend();
     fetchPaperPortfolio();
-    fetchMiniChartsData();
+    fetchNotifStatus();
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/forex/usd-inr`)
+      .then(r => r.json()).then(d => { if (d.rate) setUsdToInr(d.rate); }).catch(() => {});
     addLog("System Initialized. Await Signal.");
   }, []);
 
-  const fetchMiniChartsData = async () => {
-    const defaultTickers = [
-      { t: 'RELIANCE', n: 'Reliance Industries Limited' },
-      { t: 'HDFCBANK', n: 'HDFC Bank Limited' },
-      { t: 'BHARTIARTL', n: 'Bharti Airtel Limited' },
-      { t: 'SBIN', n: 'State Bank of India' }
-    ];
-    const newData: Record<string, { name: string, data: any[] }> = {};
-    for (const item of defaultTickers) {
-      try {
-        const r = await fetch(`/api/history/${item.t}?period=3mo`);
-        const d = await r.json();
-        if (d.history) {
-          newData[item.t] = {
-            name: item.n,
-            data: d.history.map((h: any) => ({
-              time: h.date, value: h.close, volume: h.volume
-            }))
-          };
-        }
-      } catch (e) {}
-    }
-    setMiniCharts(newData);
-  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -405,6 +462,7 @@ export default function HedgeFundPage() {
     { id: 'backtest', label: 'Backtesting', icon: 'solar:graph-up-linear' },
     { id: 'paper', label: 'Paper Trading', icon: 'solar:wallet-linear' },
     { id: 'risk', label: 'Risk Monitor', icon: 'solar:shield-warning-linear' },
+    { id: 'notifications', label: 'Telegram Alerts', icon: 'solar:bell-linear' },
   ] as const;
 
   return (
@@ -438,7 +496,7 @@ export default function HedgeFundPage() {
             <StatusChip online={backendOnline} />
             {!backendOnline && (
               <p className="text-[10px] text-white/30 text-right max-w-xs">
-                Start: <code className="text-purple-400">cd stratton-oakmont && uvicorn api_server:app --port 8000</code>
+                Start: <code className="text-purple-400">cd backend && uvicorn app.main:app --port 8000</code>
               </p>
             )}
           </div>
@@ -600,14 +658,6 @@ export default function HedgeFundPage() {
                   </div>
                   <h3 className="text-lg font-medium text-white mb-2">Ready to Analyze</h3>
                   <p className="text-sm text-white/30">Configure tickers and click "Run Analysis"</p>
-                  <div className="grid grid-cols-3 gap-3 mt-6 max-w-sm mx-auto">
-                    {['AAPL,MSFT', 'NVDA,AMD', 'TSLA,AMZN'].map(t => (
-                      <button key={t} onClick={() => setTickers(t)}
-                        className="text-[11px] px-3 py-1.5 rounded-full border border-white/10 bg-black/40 text-white/50 hover:text-white hover:border-white/30 transition-all">
-                        {t}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               )}
 
@@ -615,11 +665,13 @@ export default function HedgeFundPage() {
                 <div className="glass-panel rounded-2xl p-10 text-center">
                   <div className="w-16 h-16 rounded-full border-2 border-purple-500/30 border-t-purple-500 animate-spin mx-auto mb-6" />
                   <h3 className="text-lg font-medium text-white mb-2">Agents Running</h3>
-                  <p className="text-sm text-white/30">6 analysts processing {tickers} in parallel…</p>
+                  <p className="text-sm text-white/30">Analysts processing {tickers} in parallel…</p>
                   <div className="flex justify-center gap-3 mt-4 flex-wrap">
-                    {['Fundamentals', 'Technical', 'Sentiment', 'Valuation', 'Growth', 'Macro'].map(a => (
-                      <span key={a} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 animate-pulse">{a}</span>
-                    ))}
+                    {Object.keys(analysts).length > 0
+                      ? Object.entries(analysts).map(([key, a]) => (
+                          <span key={key} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 animate-pulse">{a.label}</span>
+                        ))
+                      : null}
                   </div>
                 </div>
               )}
@@ -1001,20 +1053,30 @@ export default function HedgeFundPage() {
             </div>
 
             <div className="lg:col-span-2 space-y-5">
-              {/* MiniChart Market Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                {Object.entries(miniCharts).length > 0 ? (
-                  Object.entries(miniCharts).map(([ticker, info]) => (
-                    <MiniChart key={ticker} ticker={ticker} name={info.name} data={info.data} height={180} />
-                  ))
+              {/* Candlestick Market Grid — driven by ptTickers */}
+              {(() => {
+                const tickers = ptTickers.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+                return tickers.length > 0 ? (
+                  <div className={`grid gap-4 mb-6 ${tickers.length === 1 ? 'grid-cols-1' : tickers.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}>
+                    {tickers.map(ticker => (
+                      <CandleMiniChart
+                        key={ticker}
+                        ticker={ticker}
+                        height={190}
+                        live
+                        pollIntervalMs={8000}
+                        selected={activePaperTicker === ticker}
+                        onSelect={setActivePaperTicker}
+                        usdToInr={usdToInr}
+                      />
+                    ))}
+                  </div>
                 ) : (
-                  [1, 2, 3, 4].map(i => (
-                    <div key={i} className="h-[180px] rounded-xl glass-panel border border-white/5 bg-[#0a0a0b] flex items-center justify-center">
-                       <iconify-icon icon="line-md:loading-loop" className="text-white/20 text-2xl" />
-                    </div>
-                  ))
-                )}
-              </div>
+                  <div className="h-[190px] rounded-xl border border-white/8 bg-[#0a0a0b] flex items-center justify-center text-white/30 text-sm mb-6">
+                    Enter tickers above to see live charts
+                  </div>
+                );
+              })()}
 
               {/* Auto Trading Master Switch */}
               <div className="flex items-center justify-between p-4 rounded-2xl glass-panel border border-white/10 bg-[#0a0a0b]">
@@ -1200,29 +1262,6 @@ export default function HedgeFundPage() {
                     </div>
                   </SpotlightCard>
 
-                  {/* Portfolio Rules */}
-                  <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(82,39,255,0.1)">
-                    <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
-                      <iconify-icon icon="solar:shield-check-bold" className="text-purple-400" />
-                      Risk Rules Active
-                    </h3>
-                    <ul className="space-y-3">
-                      {[
-                        { rule: 'Correlation Cap', desc: 'Correlated groups capped at 40% of portfolio', icon: 'solar:link-linear', color: 'text-blue-400' },
-                        { rule: 'Volatility Penalty', desc: 'High-vol stocks get confidence haircut', icon: 'solar:danger-triangle-linear', color: 'text-amber-400' },
-                        { rule: 'Position Limits', desc: 'Single position max 20% of portfolio', icon: 'solar:lock-linear', color: 'text-purple-400' },
-                        { rule: 'Consensus Vote', desc: 'Only act when majority of analysts agree', icon: 'solar:users-group-two-rounded-linear', color: 'text-emerald-400' },
-                      ].map(({ rule, desc, icon, color }) => (
-                        <li key={rule} className="flex items-start gap-3 p-3 rounded-xl bg-black/40 border border-white/5">
-                          <iconify-icon icon={icon} className={`${color} mt-0.5 flex-shrink-0`} />
-                          <div>
-                            <div className="text-sm text-white font-medium">{rule}</div>
-                            <div className="text-[11px] text-white/40 mt-0.5">{desc}</div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </SpotlightCard>
                 </>
               ) : (
                 <div className="col-span-2 glass-panel rounded-2xl p-16 text-center">
@@ -1244,10 +1283,6 @@ export default function HedgeFundPage() {
                   <iconify-icon icon="solar:graph-down-bold" className="text-red-500" />
                   STRESS LEVEL & DRAWDOWN ANALYSIS
                 </h3>
-                <div className="flex gap-4">
-                  <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-white/40 uppercase">Global CAP: 20%</div>
-                  <div className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-white/40 uppercase">Stop: 8%</div>
-                </div>
               </div>
               {btEquityData.length > 0 ? (
                 <div className="space-y-8">
@@ -1269,26 +1304,130 @@ export default function HedgeFundPage() {
               )}
             </SpotlightCard>
 
-            {/* Always-On Rules */}
-            <SpotlightCard className="glass-panel rounded-2xl p-6" spotlightColor="rgba(82,39,255,0.05)">
-              <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
-                <iconify-icon icon="solar:code-circle-linear" className="text-white/40" />
-                Hard-Coded Guard Rails
-                <span className="text-[10px] text-white/30 ml-auto">Never overridden by AI</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { code: `if portfolio_value < start * 0.92:\n  liquidate_all()`, label: 'Stop-Loss Trigger', color: 'border-red-500/20' },
-                  { code: `if corr(A, B, 60d) > 0.7:\n  group_cap = 0.40`, label: 'Correlation Cap', color: 'border-amber-500/20' },
-                  { code: `max_position = 0.20\n# per ticker`, label: 'Position Limit', color: 'border-blue-500/20' },
-                ].map(({ code, label, color }) => (
-                  <div key={label} className={`p-4 rounded-xl bg-black/60 border ${color}`}>
-                    <pre className="text-[11px] text-emerald-300 font-mono mb-2 whitespace-pre">{code}</pre>
-                    <div className="text-[10px] text-white/40 uppercase tracking-widest">{label}</div>
-                  </div>
-                ))}
+          </div>
+        )}
+
+        {/* ── TAB: Telegram Notifications ─────────────────────────────────────── */}
+        {activeTab === 'notifications' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Header card */}
+            <SpotlightCard spotlightColor="rgba(82,39,255,0.12)" className="p-6 rounded-2xl border border-white/8 bg-white/[0.02]">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-lg">📬</div>
+                <div>
+                  <h2 className="text-base font-semibold text-white">Telegram Alerts</h2>
+                  <p className="text-[11px] text-white/40">Routine market digests &amp; critical alerts delivered to your Telegram.</p>
+                </div>
+                <div className={`ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${notifConfigured ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${notifConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                  {notifConfigured ? 'Connected' : 'Not configured'}
+                </div>
               </div>
             </SpotlightCard>
+
+            {/* Credentials */}
+            <SpotlightCard spotlightColor="rgba(82,39,255,0.08)" className="p-6 rounded-2xl border border-white/8 bg-white/[0.02]">
+              <h3 className="text-xs font-semibold text-white/60 uppercase tracking-widest mb-4">Bot Credentials</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[11px] text-white/40 block mb-1.5">Telegram Bot Token</label>
+                  <input
+                    type="password"
+                    value={tgBotToken}
+                    onChange={e => setTgBotToken(e.target.value)}
+                    placeholder="1234567890:ABCdef..."
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-purple-500/50"
+                  />
+                  <p className="text-[10px] text-white/25 mt-1">Create a bot via <span className="text-blue-400">@BotFather</span> on Telegram.</p>
+                </div>
+                <div>
+                  <label className="text-[11px] text-white/40 block mb-1.5">Chat ID</label>
+                  <input
+                    type="text"
+                    value={tgChatId}
+                    onChange={e => setTgChatId(e.target.value)}
+                    placeholder="-100123456789 or your personal chat ID"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-purple-500/50"
+                  />
+                  <p className="text-[10px] text-white/25 mt-1">Send a message to your bot, then use <span className="text-blue-400">@userinfobot</span> to get your chat ID.</p>
+                </div>
+              </div>
+            </SpotlightCard>
+
+            {/* Digest schedule */}
+            <SpotlightCard spotlightColor="rgba(82,39,255,0.08)" className="p-6 rounded-2xl border border-white/8 bg-white/[0.02]">
+              <h3 className="text-xs font-semibold text-white/60 uppercase tracking-widest mb-4">Routine Digest Schedule</h3>
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <div className="text-sm text-white font-medium">Enable Auto Digest</div>
+                  <div className="text-[11px] text-white/35 mt-0.5">Sends market summary + top news to Telegram on schedule.</div>
+                </div>
+                <button
+                  onClick={() => setDigestEnabled(v => !v)}
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${digestEnabled ? 'bg-purple-500' : 'bg-white/10'}`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${digestEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div>
+                <label className="text-[11px] text-white/40 block mb-2">Interval</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[3, 6, 12, 24].map(h => (
+                    <button
+                      key={h}
+                      onClick={() => setDigestInterval(h)}
+                      className={`py-2 rounded-xl text-sm font-medium border transition-all ${digestInterval === h ? 'bg-purple-500/20 border-purple-500/50 text-purple-300' : 'bg-white/[0.03] border-white/10 text-white/40 hover:text-white/70'}`}
+                    >
+                      {h}h
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-white/25 mt-2">Digest will be sent every {digestInterval} hour{digestInterval > 1 ? 's' : ''}.</p>
+              </div>
+            </SpotlightCard>
+
+            {/* Feedback message */}
+            {notifMsg && (
+              <div className={`px-4 py-3 rounded-xl border text-sm ${notifMsg.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
+                {notifMsg.ok ? '✓ ' : '✗ '}{notifMsg.text}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <StarBorder
+                as="button"
+                onClick={saveNotifConfig}
+                disabled={notifLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-purple-600/80 hover:bg-purple-600 disabled:opacity-50 transition-colors"
+                color="#a78bfa"
+                speed="4s"
+              >
+                {notifLoading ? 'Saving…' : 'Save Config'}
+              </StarBorder>
+              <button
+                onClick={sendTestTelegram}
+                disabled={notifLoading || !notifConfigured}
+                className="py-2.5 rounded-xl text-sm font-medium border border-white/10 bg-white/[0.03] text-white/70 hover:text-white hover:border-white/20 disabled:opacity-40 transition-all"
+              >
+                Send Test Ping
+              </button>
+              <button
+                onClick={sendDigestNow}
+                disabled={digestSending || !notifConfigured}
+                className="py-2.5 rounded-xl text-sm font-medium border border-white/10 bg-white/[0.03] text-white/70 hover:text-white hover:border-white/20 disabled:opacity-40 transition-all"
+              >
+                {digestSending ? 'Sending…' : 'Send Digest Now'}
+              </button>
+            </div>
+
+            {/* Info box */}
+            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/8 space-y-2">
+              <p className="text-[11px] text-white/40 font-semibold uppercase tracking-widest">What the digest includes</p>
+              {['🏦 Live NIFTY / SENSEX snapshot', '🔥 Top 5 trending NSE stocks', '📰 Top 7 business news headlines', '⚠️ Critical stock alerts (>3% drop)'].map(item => (
+                <div key={item} className="text-[12px] text-white/50">{item}</div>
+              ))}
+            </div>
           </div>
         )}
       </div>
